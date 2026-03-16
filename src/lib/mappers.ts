@@ -10,6 +10,13 @@ import type {
   InvoiceLineItem,
   NdisRate,
   ClientDocument,
+  SessionNote,
+  IncidentReport,
+  Timesheet,
+  ComplianceRecord,
+  ClaimSubmission,
+  UserInvitation,
+  UserProfile,
 } from '@/types';
 
 // ---------------------------------------------------------------------------
@@ -468,5 +475,245 @@ export function fromClientDocument(
     upload_date: entity.uploadDate,
     size: entity.size,
     storage_path: entity.storagePath,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// UserProfile
+// ---------------------------------------------------------------------------
+
+export function toUserProfile(row: any): UserProfile {
+  return {
+    id: row.id,
+    fullName: row.full_name,
+    role: row.role || 'staff',
+    carerId: row.carer_id ?? undefined,
+    avatarUrl: row.avatar_url ?? undefined,
+    phone: row.phone ?? undefined,
+    createdAt: row.created_at,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// SessionNote
+// ---------------------------------------------------------------------------
+
+export function toSessionNote(row: any): SessionNote {
+  return {
+    id: row.id,
+    shiftId: row.shift_id,
+    carerId: row.carer_id,
+    clientId: row.client_id,
+    content: row.content,
+    participantMood: row.participant_mood,
+    goalsAddressed: row.goals_addressed ?? [],
+    followUpRequired: row.follow_up_required,
+    followUpNotes: row.follow_up_notes ?? '',
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function fromSessionNote(
+  entity: SessionNote | Omit<SessionNote, 'id' | 'createdAt' | 'updatedAt'>,
+): Record<string, unknown> {
+  return omitUndefined({
+    id: (entity as SessionNote).id,
+    shift_id: entity.shiftId,
+    carer_id: entity.carerId,
+    client_id: entity.clientId,
+    content: entity.content,
+    participant_mood: entity.participantMood,
+    goals_addressed: entity.goalsAddressed,
+    follow_up_required: entity.followUpRequired,
+    follow_up_notes: entity.followUpNotes,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// IncidentReport
+// ---------------------------------------------------------------------------
+
+export function toIncidentReport(row: any): IncidentReport {
+  return {
+    id: row.id,
+    clientId: row.client_id,
+    carerId: row.carer_id,
+    shiftId: row.shift_id ?? undefined,
+    incidentDate: row.incident_date,
+    incidentType: row.incident_type,
+    severity: row.severity,
+    description: row.description,
+    immediateActionTaken: row.immediate_action_taken ?? '',
+    followUpRequired: row.follow_up_required,
+    followUpNotes: row.follow_up_notes ?? '',
+    witnessNames: row.witness_names ?? '',
+    reportedBy: row.reported_by,
+    reviewedBy: row.reviewed_by ?? undefined,
+    status: row.status,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function fromIncidentReport(
+  entity: IncidentReport | Omit<IncidentReport, 'id' | 'createdAt' | 'updatedAt'>,
+): Record<string, unknown> {
+  return omitUndefined({
+    id: (entity as IncidentReport).id,
+    client_id: entity.clientId,
+    carer_id: entity.carerId,
+    shift_id: entity.shiftId,
+    incident_date: entity.incidentDate,
+    incident_type: entity.incidentType,
+    severity: entity.severity,
+    description: entity.description,
+    immediate_action_taken: entity.immediateActionTaken,
+    follow_up_required: entity.followUpRequired,
+    follow_up_notes: entity.followUpNotes,
+    witness_names: entity.witnessNames,
+    reported_by: entity.reportedBy,
+    reviewed_by: entity.reviewedBy,
+    status: entity.status,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Timesheet
+// ---------------------------------------------------------------------------
+
+export function toTimesheet(row: any): Timesheet {
+  return {
+    id: row.id,
+    carerId: row.carer_id,
+    shiftId: row.shift_id,
+    clockIn: row.clock_in ?? undefined,
+    clockOut: row.clock_out ?? undefined,
+    breakMinutes: row.break_minutes ?? 0,
+    totalHours: row.total_hours ?? undefined,
+    status: row.status,
+    approvedBy: row.approved_by ?? undefined,
+    notes: row.notes ?? '',
+    createdAt: row.created_at,
+  };
+}
+
+export function fromTimesheet(
+  entity: Timesheet | Omit<Timesheet, 'id' | 'createdAt'>,
+): Record<string, unknown> {
+  return omitUndefined({
+    id: (entity as Timesheet).id,
+    carer_id: entity.carerId,
+    shift_id: entity.shiftId,
+    clock_in: entity.clockIn,
+    clock_out: entity.clockOut,
+    break_minutes: entity.breakMinutes,
+    total_hours: entity.totalHours,
+    status: entity.status,
+    approved_by: entity.approvedBy,
+    notes: entity.notes,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// ComplianceRecord
+// ---------------------------------------------------------------------------
+
+export function toComplianceRecord(row: any): ComplianceRecord {
+  return {
+    id: row.id,
+    carerId: row.carer_id,
+    checkType: row.check_type,
+    certificateNumber: row.certificate_number ?? '',
+    issueDate: row.issue_date ?? '',
+    expiryDate: row.expiry_date ?? '',
+    status: row.status,
+    documentPath: row.document_path ?? undefined,
+    notes: row.notes ?? '',
+    createdAt: row.created_at,
+  };
+}
+
+export function fromComplianceRecord(
+  entity: ComplianceRecord | Omit<ComplianceRecord, 'id' | 'createdAt'>,
+): Record<string, unknown> {
+  return omitUndefined({
+    id: (entity as ComplianceRecord).id,
+    carer_id: entity.carerId,
+    check_type: entity.checkType,
+    certificate_number: entity.certificateNumber,
+    issue_date: entity.issueDate,
+    expiry_date: entity.expiryDate,
+    status: entity.status,
+    document_path: entity.documentPath,
+    notes: entity.notes,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// ClaimSubmission
+// ---------------------------------------------------------------------------
+
+export function toClaimSubmission(row: any): ClaimSubmission {
+  return {
+    id: row.id,
+    invoiceId: row.invoice_id,
+    claimReference: row.claim_reference ?? '',
+    submittedDate: row.submitted_date ?? '',
+    portal: row.portal,
+    status: row.status,
+    paidAmount: row.paid_amount ?? undefined,
+    paidDate: row.paid_date ?? undefined,
+    rejectionReason: row.rejection_reason ?? undefined,
+    notes: row.notes ?? '',
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function fromClaimSubmission(
+  entity: ClaimSubmission | Omit<ClaimSubmission, 'id' | 'createdAt' | 'updatedAt'>,
+): Record<string, unknown> {
+  return omitUndefined({
+    id: (entity as ClaimSubmission).id,
+    invoice_id: entity.invoiceId,
+    claim_reference: entity.claimReference,
+    submitted_date: entity.submittedDate,
+    portal: entity.portal,
+    status: entity.status,
+    paid_amount: entity.paidAmount,
+    paid_date: entity.paidDate,
+    rejection_reason: entity.rejectionReason,
+    notes: entity.notes,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// UserInvitation
+// ---------------------------------------------------------------------------
+
+export function toUserInvitation(row: any): UserInvitation {
+  return {
+    id: row.id,
+    email: row.email,
+    role: row.role,
+    carerId: row.carer_id ?? undefined,
+    invitedBy: row.invited_by,
+    token: row.token,
+    expiresAt: row.expires_at,
+    acceptedAt: row.accepted_at ?? undefined,
+    createdAt: row.created_at,
+  };
+}
+
+export function fromUserInvitation(
+  entity: Omit<UserInvitation, 'id' | 'token' | 'createdAt'>,
+): Record<string, unknown> {
+  return omitUndefined({
+    email: entity.email,
+    role: entity.role,
+    carer_id: entity.carerId,
+    invited_by: entity.invitedBy,
+    expires_at: entity.expiresAt,
   });
 }

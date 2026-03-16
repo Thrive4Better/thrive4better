@@ -13,6 +13,17 @@ const pageTitles: Record<string, { title: string; breadcrumb: string[] }> = {
   '/invoices': { title: 'Invoices', breadcrumb: ['Finance'] },
   '/invoices/new': { title: 'Invoice Builder', breadcrumb: ['Finance', 'New Invoice'] },
   '/invoices/rates': { title: 'NDIS Rates', breadcrumb: ['Finance', 'Rates'] },
+  '/invoices/claims': { title: 'Claim Tracker', breadcrumb: ['Finance', 'Claims'] },
+  '/roster/timesheets': { title: 'Timesheets', breadcrumb: ['Roster', 'Timesheets'] },
+  '/incidents': { title: 'Incident Reports', breadcrumb: ['Compliance', 'Incidents'] },
+  '/incidents/new': { title: 'Report Incident', breadcrumb: ['Compliance', 'New Incident'] },
+  '/compliance': { title: 'Compliance Tracker', breadcrumb: ['Compliance'] },
+  '/reports': { title: 'Reports', breadcrumb: ['Reports'] },
+  '/tools/ideas': { title: 'Idea Generator', breadcrumb: ['AI Tools'] },
+  '/tools/idea-generator': { title: 'Idea Generator', breadcrumb: ['AI Tools'] },
+  '/my-shifts': { title: 'My Shifts', breadcrumb: ['My Work'] },
+  '/my-timesheet': { title: 'My Timesheet', breadcrumb: ['My Work'] },
+  '/admin/users': { title: 'User Management', breadcrumb: ['Admin'] },
   '/settings': { title: 'Settings', breadcrumb: ['Settings'] },
 };
 

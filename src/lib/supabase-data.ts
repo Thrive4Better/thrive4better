@@ -20,6 +20,18 @@ import {
   fromNdisRate,
   toClientDocument,
   fromClientDocument,
+  toSessionNote,
+  fromSessionNote,
+  toIncidentReport,
+  fromIncidentReport,
+  toTimesheet,
+  fromTimesheet,
+  toComplianceRecord,
+  fromComplianceRecord,
+  toClaimSubmission,
+  fromClaimSubmission,
+  toUserInvitation,
+  toUserProfile,
 } from '@/lib/mappers';
 import type {
   Client,
@@ -29,6 +41,13 @@ import type {
   Invoice,
   NdisRate,
   ClientDocument,
+  SessionNote,
+  IncidentReport,
+  Timesheet,
+  ComplianceRecord,
+  ClaimSubmission,
+  UserInvitation,
+  UserProfile,
 } from '@/types';
 
 // ---------------------------------------------------------------------------
@@ -558,6 +577,187 @@ export async function deleteDocument(id: string): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Session Notes
+// ---------------------------------------------------------------------------
+
+export async function fetchSessionNotes(): Promise<SessionNote[]> {
+  const { data, error } = await supabase.from('session_notes').select('*');
+  if (error) throw new Error(`Failed to fetch session notes: ${error.message}`);
+  return (data ?? []).map(toSessionNote);
+}
+
+export async function insertSessionNote(
+  note: Omit<SessionNote, 'id' | 'createdAt' | 'updatedAt'>,
+): Promise<SessionNote> {
+  const row = fromSessionNote(note);
+  const { data, error } = await supabase.from('session_notes').insert(row).select().single();
+  if (error) throw new Error(`Failed to insert session note: ${error.message}`);
+  return toSessionNote(data);
+}
+
+export async function updateSessionNote(id: string, data: Partial<SessionNote>): Promise<SessionNote> {
+  const row = fromSessionNote({ id, ...data } as SessionNote);
+  delete row.id;
+  const { data: updated, error } = await supabase.from('session_notes').update(row).eq('id', id).select().single();
+  if (error) throw new Error(`Failed to update session note: ${error.message}`);
+  return toSessionNote(updated);
+}
+
+export async function deleteSessionNote(id: string): Promise<void> {
+  const { error } = await supabase.from('session_notes').delete().eq('id', id);
+  if (error) throw new Error(`Failed to delete session note: ${error.message}`);
+}
+
+// ---------------------------------------------------------------------------
+// Incident Reports
+// ---------------------------------------------------------------------------
+
+export async function fetchIncidentReports(): Promise<IncidentReport[]> {
+  const { data, error } = await supabase.from('incident_reports').select('*');
+  if (error) throw new Error(`Failed to fetch incident reports: ${error.message}`);
+  return (data ?? []).map(toIncidentReport);
+}
+
+export async function insertIncidentReport(
+  report: Omit<IncidentReport, 'id' | 'createdAt' | 'updatedAt'>,
+): Promise<IncidentReport> {
+  const row = fromIncidentReport(report);
+  const { data, error } = await supabase.from('incident_reports').insert(row).select().single();
+  if (error) throw new Error(`Failed to insert incident report: ${error.message}`);
+  return toIncidentReport(data);
+}
+
+export async function updateIncidentReport(id: string, data: Partial<IncidentReport>): Promise<IncidentReport> {
+  const row = fromIncidentReport({ id, ...data } as IncidentReport);
+  delete row.id;
+  const { data: updated, error } = await supabase.from('incident_reports').update(row).eq('id', id).select().single();
+  if (error) throw new Error(`Failed to update incident report: ${error.message}`);
+  return toIncidentReport(updated);
+}
+
+export async function deleteIncidentReport(id: string): Promise<void> {
+  const { error } = await supabase.from('incident_reports').delete().eq('id', id);
+  if (error) throw new Error(`Failed to delete incident report: ${error.message}`);
+}
+
+// ---------------------------------------------------------------------------
+// Timesheets
+// ---------------------------------------------------------------------------
+
+export async function fetchTimesheets(): Promise<Timesheet[]> {
+  const { data, error } = await supabase.from('timesheets').select('*');
+  if (error) throw new Error(`Failed to fetch timesheets: ${error.message}`);
+  return (data ?? []).map(toTimesheet);
+}
+
+export async function insertTimesheet(
+  ts: Omit<Timesheet, 'id' | 'createdAt'>,
+): Promise<Timesheet> {
+  const row = fromTimesheet(ts);
+  const { data, error } = await supabase.from('timesheets').insert(row).select().single();
+  if (error) throw new Error(`Failed to insert timesheet: ${error.message}`);
+  return toTimesheet(data);
+}
+
+export async function updateTimesheet(id: string, data: Partial<Timesheet>): Promise<Timesheet> {
+  const row = fromTimesheet({ id, ...data } as Timesheet);
+  delete row.id;
+  const { data: updated, error } = await supabase.from('timesheets').update(row).eq('id', id).select().single();
+  if (error) throw new Error(`Failed to update timesheet: ${error.message}`);
+  return toTimesheet(updated);
+}
+
+export async function deleteTimesheet(id: string): Promise<void> {
+  const { error } = await supabase.from('timesheets').delete().eq('id', id);
+  if (error) throw new Error(`Failed to delete timesheet: ${error.message}`);
+}
+
+// ---------------------------------------------------------------------------
+// Compliance Records
+// ---------------------------------------------------------------------------
+
+export async function fetchComplianceRecords(): Promise<ComplianceRecord[]> {
+  const { data, error } = await supabase.from('compliance_records').select('*');
+  if (error) throw new Error(`Failed to fetch compliance records: ${error.message}`);
+  return (data ?? []).map(toComplianceRecord);
+}
+
+export async function insertComplianceRecord(
+  record: Omit<ComplianceRecord, 'id' | 'createdAt'>,
+): Promise<ComplianceRecord> {
+  const row = fromComplianceRecord(record);
+  const { data, error } = await supabase.from('compliance_records').insert(row).select().single();
+  if (error) throw new Error(`Failed to insert compliance record: ${error.message}`);
+  return toComplianceRecord(data);
+}
+
+export async function updateComplianceRecord(id: string, data: Partial<ComplianceRecord>): Promise<ComplianceRecord> {
+  const row = fromComplianceRecord({ id, ...data } as ComplianceRecord);
+  delete row.id;
+  const { data: updated, error } = await supabase.from('compliance_records').update(row).eq('id', id).select().single();
+  if (error) throw new Error(`Failed to update compliance record: ${error.message}`);
+  return toComplianceRecord(updated);
+}
+
+export async function deleteComplianceRecord(id: string): Promise<void> {
+  const { error } = await supabase.from('compliance_records').delete().eq('id', id);
+  if (error) throw new Error(`Failed to delete compliance record: ${error.message}`);
+}
+
+// ---------------------------------------------------------------------------
+// Claim Submissions
+// ---------------------------------------------------------------------------
+
+export async function fetchClaimSubmissions(): Promise<ClaimSubmission[]> {
+  const { data, error } = await supabase.from('claim_submissions').select('*');
+  if (error) throw new Error(`Failed to fetch claim submissions: ${error.message}`);
+  return (data ?? []).map(toClaimSubmission);
+}
+
+export async function insertClaimSubmission(
+  claim: Omit<ClaimSubmission, 'id' | 'createdAt' | 'updatedAt'>,
+): Promise<ClaimSubmission> {
+  const row = fromClaimSubmission(claim);
+  const { data, error } = await supabase.from('claim_submissions').insert(row).select().single();
+  if (error) throw new Error(`Failed to insert claim submission: ${error.message}`);
+  return toClaimSubmission(data);
+}
+
+export async function updateClaimSubmission(id: string, data: Partial<ClaimSubmission>): Promise<ClaimSubmission> {
+  const row = fromClaimSubmission({ id, ...data } as ClaimSubmission);
+  delete row.id;
+  const { data: updated, error } = await supabase.from('claim_submissions').update(row).eq('id', id).select().single();
+  if (error) throw new Error(`Failed to update claim submission: ${error.message}`);
+  return toClaimSubmission(updated);
+}
+
+export async function deleteClaimSubmission(id: string): Promise<void> {
+  const { error } = await supabase.from('claim_submissions').delete().eq('id', id);
+  if (error) throw new Error(`Failed to delete claim submission: ${error.message}`);
+}
+
+// ---------------------------------------------------------------------------
+// User Profiles & Invitations
+// ---------------------------------------------------------------------------
+
+export async function fetchUserProfiles(): Promise<UserProfile[]> {
+  const { data, error } = await supabase.from('profiles').select('*');
+  if (error) throw new Error(`Failed to fetch user profiles: ${error.message}`);
+  return (data ?? []).map(toUserProfile);
+}
+
+export async function updateUserProfile(id: string, updates: { role?: string; carer_id?: string | null }): Promise<void> {
+  const { error } = await supabase.from('profiles').update(updates).eq('id', id);
+  if (error) throw new Error(`Failed to update user profile: ${error.message}`);
+}
+
+export async function fetchUserInvitations(): Promise<UserInvitation[]> {
+  const { data, error } = await supabase.from('user_invitations').select('*');
+  if (error) throw new Error(`Failed to fetch user invitations: ${error.message}`);
+  return (data ?? []).map(toUserInvitation);
+}
+
+// ---------------------------------------------------------------------------
 // Fetch All
 // ---------------------------------------------------------------------------
 
@@ -569,17 +769,32 @@ export async function fetchAllData(): Promise<{
   carePlans: CarePlan[];
   ndisRates: NdisRate[];
   documents: ClientDocument[];
+  sessionNotes: SessionNote[];
+  incidentReports: IncidentReport[];
+  timesheets: Timesheet[];
+  complianceRecords: ComplianceRecord[];
+  claimSubmissions: ClaimSubmission[];
 }> {
-  const [clients, carers, shifts, invoices, carePlans, ndisRates, documents] =
-    await Promise.all([
-      fetchClients(),
-      fetchCarers(),
-      fetchShifts(),
-      fetchInvoices(),
-      fetchCarePlans(),
-      fetchNdisRates(),
-      fetchDocuments(),
-    ]);
+  const [
+    clients, carers, shifts, invoices, carePlans, ndisRates, documents,
+    sessionNotes, incidentReports, timesheets, complianceRecords, claimSubmissions,
+  ] = await Promise.all([
+    fetchClients(),
+    fetchCarers(),
+    fetchShifts(),
+    fetchInvoices(),
+    fetchCarePlans(),
+    fetchNdisRates(),
+    fetchDocuments(),
+    fetchSessionNotes(),
+    fetchIncidentReports(),
+    fetchTimesheets(),
+    fetchComplianceRecords(),
+    fetchClaimSubmissions(),
+  ]);
 
-  return { clients, carers, shifts, invoices, carePlans, ndisRates, documents };
+  return {
+    clients, carers, shifts, invoices, carePlans, ndisRates, documents,
+    sessionNotes, incidentReports, timesheets, complianceRecords, claimSubmissions,
+  };
 }

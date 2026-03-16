@@ -1,32 +1,35 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard,
-  Users,
-  ClipboardList,
-  Calendar,
   Clock,
-  UserCheck,
-  FileText,
-  FilePlus,
-  DollarSign,
-  Settings,
-  AlertTriangle,
-  ShieldCheck,
   Timer,
-  Receipt,
-  BarChart3,
+  AlertTriangle,
   Sparkles,
-  UserCog,
+  Settings,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { usePermissions } from '@/hooks/usePermissions';
 
-export default function Sidebar() {
+const navSections = [
+  {
+    label: 'MY WORK',
+    items: [
+      { to: '/my-shifts', icon: Clock, label: 'My Shifts' },
+      { to: '/my-timesheet', icon: Timer, label: 'My Timesheet' },
+    ],
+  },
+  {
+    label: 'TOOLS',
+    items: [
+      { to: '/incidents/new', icon: AlertTriangle, label: 'Report Incident' },
+      { to: '/tools/ideas', icon: Sparkles, label: 'Idea Generator' },
+    ],
+  },
+];
+
+export default function StaffSidebar() {
   const location = useLocation();
-  const { user } = useAuth();
-  const { isAdmin, isAdminOrManager } = usePermissions();
+  const { user, profile } = useAuth();
 
-  const userName = user?.user_metadata?.full_name || user?.email || 'User';
+  const userName = profile?.fullName || user?.user_metadata?.full_name || user?.email || 'User';
   const initials = userName
     .split(/[\s@]+/)
     .slice(0, 2)
@@ -34,80 +37,8 @@ export default function Sidebar() {
     .join('');
 
   const isActive = (path: string) => {
-    if (path === '/dashboard') return location.pathname === '/dashboard' || location.pathname === '/';
-    if (path === '/clients') return location.pathname === '/clients' || location.pathname.startsWith('/clients/') && !location.pathname.includes('care-plans');
-    if (path === '/roster') return location.pathname === '/roster' && !location.pathname.includes('/shifts') && !location.pathname.includes('/carers') && !location.pathname.includes('/timesheets');
     return location.pathname === path || location.pathname.startsWith(path + '/');
   };
-
-  type NavItem = { to: string; icon: typeof LayoutDashboard; label: string };
-  type NavSection = { label: string; items: NavItem[] };
-
-  const navSections: NavSection[] = [
-    {
-      label: 'OVERVIEW',
-      items: [
-        { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-      ],
-    },
-    {
-      label: 'CLIENTS',
-      items: [
-        { to: '/clients', icon: Users, label: 'All Clients' },
-        { to: '/clients/care-plans', icon: ClipboardList, label: 'Care Plans' },
-      ],
-    },
-    {
-      label: 'ROSTER',
-      items: [
-        { to: '/roster', icon: Calendar, label: 'Weekly Roster' },
-        { to: '/roster/shifts', icon: Clock, label: 'Shifts' },
-        { to: '/roster/carers', icon: UserCheck, label: 'Carers' },
-        { to: '/roster/timesheets', icon: Timer, label: 'Timesheets' },
-      ],
-    },
-    {
-      label: 'COMPLIANCE',
-      items: [
-        { to: '/incidents', icon: AlertTriangle, label: 'Incidents' },
-        { to: '/compliance', icon: ShieldCheck, label: 'Compliance' },
-      ],
-    },
-    {
-      label: 'FINANCE',
-      items: [
-        { to: '/invoices', icon: FileText, label: 'Invoices' },
-        { to: '/invoices/new', icon: FilePlus, label: 'Invoice Builder' },
-        { to: '/invoices/rates', icon: DollarSign, label: 'NDIS Rates' },
-        { to: '/invoices/claims', icon: Receipt, label: 'Claims' },
-      ],
-    },
-  ];
-
-  if (isAdminOrManager) {
-    navSections.push({
-      label: 'REPORTS',
-      items: [
-        { to: '/reports', icon: BarChart3, label: 'Reports' },
-      ],
-    });
-  }
-
-  navSections.push({
-    label: 'AI TOOLS',
-    items: [
-      { to: '/tools/ideas', icon: Sparkles, label: 'Idea Generator' },
-    ],
-  });
-
-  if (isAdmin) {
-    navSections.push({
-      label: 'ADMIN',
-      items: [
-        { to: '/admin/users', icon: UserCog, label: 'User Management' },
-      ],
-    });
-  }
 
   return (
     <aside className="w-60 bg-white border-r border-sage-pale flex flex-col h-screen fixed left-0 top-0 z-30">
