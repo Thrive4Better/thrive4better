@@ -224,13 +224,13 @@ export default function ClientList() {
     setMenuOpenId(null);
   }
 
-  function onSubmit(data: ClientFormData) {
+  async function onSubmit(data: ClientFormData) {
     try {
       if (editingClient) {
-        updateClient(editingClient.id, data);
+        await updateClient(editingClient.id, data);
         toast.success(`${data.firstName} ${data.lastName} updated successfully`);
       } else {
-        addClient(data);
+        await addClient({ ...data, supportCategories: [] });
         toast.success(`${data.firstName} ${data.lastName} added successfully`);
       }
       setSlideOpen(false);

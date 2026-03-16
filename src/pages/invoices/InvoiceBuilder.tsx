@@ -305,7 +305,7 @@ export default function InvoiceBuilder() {
   );
 
   // ── Save ──
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!clientId) {
       toast.error('Please select a client');
       return;
@@ -319,7 +319,7 @@ export default function InvoiceBuilder() {
       return;
     }
 
-    const invoiceData: Omit<Invoice, 'id' | 'invoiceNumber' | 'createdAt'> = {
+    const invoiceData = {
       clientId,
       invoiceDate,
       dueDate,
@@ -332,14 +332,15 @@ export default function InvoiceBuilder() {
       gstApplicable,
       gstAmount,
       total,
+      invoiceNumber,
       status: existingInvoice?.status ?? 'Draft',
     };
 
     if (isEditing && existingInvoice) {
-      updateInvoice(existingInvoice.id, invoiceData);
+      await updateInvoice(existingInvoice.id, invoiceData);
       toast.success('Invoice updated');
     } else {
-      const newInvoice = addInvoice(invoiceData);
+      const newInvoice = await addInvoice(invoiceData);
       toast.success(`Invoice ${newInvoice.invoiceNumber} created`);
       navigate(`/invoices/${newInvoice.id}/edit`, { replace: true });
     }
