@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useStore } from '@/stores/useStore';
 import { formatDate, formatTime, formatCurrency, cn, getServiceTypeColor } from '@/lib/utils';
@@ -8,10 +8,12 @@ import {
   ArrowLeft, User, CreditCard, Target, Calendar, FileText, FolderOpen,
   Phone, Mail, MapPin, Shield, Heart, AlertTriangle, Stethoscope,
   Clock, Download, Upload, File, FileImage, FileSpreadsheet,
-  Edit2, Save, X, ChevronRight,
+  Edit2, Save, X, ChevronRight, Trash2,
 } from 'lucide-react';
 import type { CarePlan, CarePlanGoal, AlliedHealthContact, Shift } from '@/types';
 import { format, parseISO, isWithinInterval } from 'date-fns';
+import { supabase } from '@/lib/supabase';
+import toast from 'react-hot-toast';
 
 // ── Tab types ───────────────────────────────────────────────────────────────
 
@@ -46,8 +48,10 @@ export default function ClientProfile() {
   const {
     getClientById, getShiftsByClient, getInvoicesByClient,
     getCarePlanByClient, getDocumentsByClient,
-    getCarerById, updateCarePlan,
+    getCarerById, updateCarePlan, addDocument, deleteDocument,
   } = useStore();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
 
   const _client = getClientById(id ?? '');
   // client is narrowed by the early-return guard below
@@ -718,10 +722,69 @@ export default function ClientProfile() {
     );
   }
 
+  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files;
+    if (!files || files.length === 0 || !id) return;
+    setUploading(true);
+    try {
+      for (const file of Array.from(files)) {
+        const safeName = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+        const storagePath = `documents/${id}/${safeName}`;
+        const { error: uploadError } = await supabase.storage
+          .from('documents')
+          .upload(storagePath, file);
+        if (uploadError) throw uploadError;
+
+        const sizeStr = file.size < 1024 * 1024
+          ? `${(file.size / 1024).toFixed(0)} KB`
+          : `${(file.size / (1024 * 1024)).toFixed(1)} MB`;
+        const ext = file.name.split('.').pop()?.toUpperCase() || 'FILE';
+
+        await addDocument({
+          clientId: id,
+          name: file.name,
+          fileType: ext,
+          uploadDate: new Date().toISOString(),
+          size: sizeStr,
+          storagePath,
+        });
+      }
+      toast.success('Document(s) uploaded successfully');
+    } catch (err) {
+      toast.error(`Upload failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }
+
+  async function handleDownloadDoc(storagePath: string | undefined, name: string) {
+    if (!storagePath) {
+      toast.error('No file path available');
+      return;
+    }
+    const { data, error } = await supabase.storage
+      .from('documents')
+      .createSignedUrl(storagePath, 60);
+    if (error || !data?.signedUrl) {
+      toast.error('Failed to generate download link');
+      return;
+    }
+    window.open(data.signedUrl, '_blank');
+  }
+
+  async function handleDeleteDoc(docId: string, storagePath: string | undefined) {
+    if (storagePath) {
+      await supabase.storage.from('documents').remove([storagePath]);
+    }
+    await deleteDocument(docId);
+    toast.success('Document deleted');
+  }
+
   function renderDocuments() {
     return (
       <div className="space-y-4">
-        {/* Upload placeholder */}
+        {/* Upload area */}
         <div className="card border-2 border-dashed border-sage-pale">
           <div className="flex flex-col items-center justify-center py-8">
             <div className="w-12 h-12 rounded-full bg-sage-pale flex items-center justify-center mb-3">
@@ -729,8 +792,29 @@ export default function ClientProfile() {
             </div>
             <p className="text-sm font-medium text-charcoal mb-1">Upload Documents</p>
             <p className="text-xs text-mid-gray">Drag and drop files here, or click to browse</p>
-            <button className="btn-secondary mt-4 text-sm">
-              <Upload size={14} /> Browse Files
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={handleFileUpload}
+            />
+            <button
+              className="btn-secondary mt-4 text-sm"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+            >
+              {uploading ? (
+                <span className="flex items-center gap-2">
+                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Uploading...
+                </span>
+              ) : (
+                <><Upload size={14} /> Browse Files</>
+              )}
             </button>
           </div>
         </div>
@@ -752,6 +836,7 @@ export default function ClientProfile() {
                     <th className="table-header">Type</th>
                     <th className="table-header">Date Uploaded</th>
                     <th className="table-header">Size</th>
+                    <th className="table-header">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -766,6 +851,24 @@ export default function ClientProfile() {
                       <td className="table-cell text-xs uppercase text-mid-gray">{doc.fileType}</td>
                       <td className="table-cell">{formatDate(doc.uploadDate)}</td>
                       <td className="table-cell text-mid-gray">{doc.size}</td>
+                      <td className="table-cell">
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => handleDownloadDoc(doc.storagePath, doc.name)}
+                            className="p-1.5 rounded hover:bg-sage-pale transition-colors text-forest"
+                            title="Download"
+                          >
+                            <Download size={15} />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteDoc(doc.id, doc.storagePath)}
+                            className="p-1.5 rounded hover:bg-red-50 transition-colors text-burgundy"
+                            title="Delete"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

@@ -1,5 +1,6 @@
 import { useLocation } from 'react-router-dom';
-import { Search, Bell } from 'lucide-react';
+import { Search, Bell, LogOut } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
 
 const pageTitles: Record<string, { title: string; breadcrumb: string[] }> = {
   '/dashboard': { title: 'Dashboard', breadcrumb: ['Overview'] },
@@ -17,15 +18,13 @@ const pageTitles: Record<string, { title: string; breadcrumb: string[] }> = {
 
 export default function Header() {
   const location = useLocation();
+  const { user, signOut } = useAuth();
 
   const getPageInfo = () => {
-    // Try exact match first
     if (pageTitles[location.pathname]) return pageTitles[location.pathname];
-    // Client profile
     if (location.pathname.startsWith('/clients/') && !location.pathname.includes('care-plans')) {
       return { title: 'Client Profile', breadcrumb: ['Clients', 'Profile'] };
     }
-    // Invoice edit
     if (location.pathname.match(/\/invoices\/[^/]+\/edit/)) {
       return { title: 'Edit Invoice', breadcrumb: ['Finance', 'Edit Invoice'] };
     }
@@ -33,6 +32,13 @@ export default function Header() {
   };
 
   const { title, breadcrumb } = getPageInfo();
+
+  const userName = user?.user_metadata?.full_name || user?.email || 'User';
+  const initials = userName
+    .split(/[\s@]+/)
+    .slice(0, 2)
+    .map((s: string) => s[0]?.toUpperCase() || '')
+    .join('');
 
   return (
     <header className="h-16 bg-white border-b border-sage-pale flex items-center justify-between px-6 sticky top-0 z-20">
@@ -63,9 +69,19 @@ export default function Header() {
           <Bell size={20} className="text-mid-gray" />
           <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-burgundy rounded-full" />
         </button>
-        <div className="w-8 h-8 rounded-full bg-forest flex items-center justify-center ml-1">
-          <span className="text-white text-xs font-semibold">AK</span>
+        <div className="flex items-center gap-2 ml-2">
+          <div className="w-8 h-8 rounded-full bg-forest flex items-center justify-center">
+            <span className="text-white text-xs font-semibold">{initials}</span>
+          </div>
+          <span className="text-sm text-charcoal hidden xl:block max-w-[120px] truncate">{userName}</span>
         </div>
+        <button
+          onClick={signOut}
+          className="p-2 rounded-lg hover:bg-sage-pale transition-colors text-mid-gray hover:text-burgundy"
+          title="Sign out"
+        >
+          <LogOut size={18} />
+        </button>
       </div>
     </header>
   );

@@ -11,6 +11,7 @@ import {
   DollarSign,
   Settings,
 } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
 
 const navSections = [
   {
@@ -46,6 +47,14 @@ const navSections = [
 
 export default function Sidebar() {
   const location = useLocation();
+  const { user } = useAuth();
+
+  const userName = user?.user_metadata?.full_name || user?.email || 'User';
+  const initials = userName
+    .split(/[\s@]+/)
+    .slice(0, 2)
+    .map((s: string) => s[0]?.toUpperCase() || '')
+    .join('');
 
   const isActive = (path: string) => {
     if (path === '/dashboard') return location.pathname === '/dashboard' || location.pathname === '/';
@@ -113,11 +122,11 @@ export default function Sidebar() {
         </NavLink>
         <div className="flex items-center gap-3 px-3 py-3 mt-2">
           <div className="w-8 h-8 rounded-full bg-forest flex items-center justify-center">
-            <span className="text-white text-xs font-semibold">AK</span>
+            <span className="text-white text-xs font-semibold">{initials}</span>
           </div>
           <div className="min-w-0">
-            <p className="text-sm font-medium text-charcoal truncate">Admin User</p>
-            <p className="text-xs text-mid-gray truncate">admin@thrive4better.com.au</p>
+            <p className="text-sm font-medium text-charcoal truncate">{userName}</p>
+            <p className="text-xs text-mid-gray truncate">{user?.email || ''}</p>
           </div>
         </div>
       </div>

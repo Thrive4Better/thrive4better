@@ -150,4 +150,5 @@ export interface ClientDocument {
   fileType: string;
   uploadDate: string;
   size: string;
+  storagePath?: string;
 }
