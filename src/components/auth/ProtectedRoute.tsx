@@ -11,7 +11,7 @@ export default function ProtectedRoute() {
 
   useEffect(() => {
     if (user && !isInitialized) {
-      initialize();
+      initialize().catch(() => {});
     }
   }, [user, isInitialized, initialize]);
 

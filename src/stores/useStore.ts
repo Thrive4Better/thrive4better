@@ -81,8 +81,7 @@ export const useStore = create<AppState>()((set, get) => ({
       set({ ...data, isInitialized: true, isLoading: false });
     } catch (error) {
       console.error('Failed to initialize store:', error);
-      set({ isLoading: false });
-      throw error;
+      set({ isInitialized: true, isLoading: false });
     }
   },
 
