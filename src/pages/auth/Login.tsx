@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -107,7 +108,15 @@ export default function Login() {
   const [signUpSuccess, setSignUpSuccess] = useState(false);
   const [signUpEmail, setSignUpEmail] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
-  const { signIn, signUp, verifyOtp } = useAuth();
+  const navigate = useNavigate();
+  const { signIn, signUp, verifyOtp, user } = useAuth();
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (user) {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [user, navigate]);
 
   const loginForm = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
@@ -123,6 +132,7 @@ export default function Login() {
     setIsSubmitting(true);
     try {
       await signIn(data.email, data.password);
+      navigate('/dashboard', { replace: true });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to sign in';
       toast.error(message);
