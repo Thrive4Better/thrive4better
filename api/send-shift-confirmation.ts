@@ -6,7 +6,7 @@ import { shiftConfirmationEmail } from './lib/email-templates';
 const supabaseUrl = process.env.VITE_SUPABASE_URL!;
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const resendApiKey = process.env.RESEND_API_KEY!;
-const fromEmail = process.env.RESEND_FROM_EMAIL || 'invoices@thrive4better.com.au';
+const fromEmail = process.env.RESEND_FROM_EMAIL || 'invoices@info.thrive4better.com';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
