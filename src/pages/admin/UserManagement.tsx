@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useStore } from '@/stores/useStore';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import SlideOver from '@/components/ui/SlideOver';
 import { UserPlus, Link, Unlink, ChevronDown } from 'lucide-react';
-import type { UserRole, Carer } from '@/types';
+import type { UserRole } from '@/types';
 import toast from 'react-hot-toast';
 import { generateId } from '@/lib/utils';
 
@@ -27,10 +27,13 @@ const roleBadgeStyles: Record<string, string> = {
 
 export default function UserManagement() {
   const { user } = useAuth();
-  const { carers } = useStore();
+  const carers = useStore((s) => s.carers);
+
+  console.log('[UserManagement] Rendering, user:', user?.id, 'carers:', carers.length);
 
   const [profiles, setProfiles] = useState<ProfileRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [inviteOpen, setInviteOpen] = useState(false);
 
   // Invite form state
@@ -40,25 +43,40 @@ export default function UserManagement() {
   const [inviting, setInviting] = useState(false);
 
   // Fetch profiles
-  const fetchProfiles = async () => {
+  const fetchProfiles = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('id, full_name, role, carer_id, avatar_url, phone, created_at')
-      .order('created_at', { ascending: false });
+    setError(null);
+    try {
+      const { data, error: queryError } = await supabase
+        .from('profiles')
+        .select('id, full_name, role, carer_id, avatar_url, phone, created_at')
+        .order('created_at', { ascending: false });
 
-    if (error) {
+      if (signal?.aborted) return;
+
+      if (queryError) {
+        console.error('[UserManagement] Failed to load profiles:', queryError);
+        setError('Failed to load users');
+        toast.error('Failed to load users');
+        setLoading(false);
+        return;
+      }
+      setProfiles(data || []);
+      setLoading(false);
+    } catch (err) {
+      if (signal?.aborted) return;
+      console.error('[UserManagement] Unexpected error loading profiles:', err);
+      setError('Failed to load users');
       toast.error('Failed to load users');
       setLoading(false);
-      return;
     }
-    setProfiles(data || []);
-    setLoading(false);
-  };
+  }, []);
 
   useEffect(() => {
-    fetchProfiles();
-  }, []);
+    const controller = new AbortController();
+    fetchProfiles(controller.signal);
+    return () => controller.abort();
+  }, [fetchProfiles]);
 
   // Linked carer IDs for the "unlinked carers" dropdown
   const linkedCarerIds = new Set(profiles.map((p) => p.carer_id).filter(Boolean));
@@ -154,6 +172,13 @@ export default function UserManagement() {
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
             </svg>
+          </div>
+        ) : error ? (
+          <div className="text-center py-8">
+            <p className="text-sm text-burgundy mb-3">{error}</p>
+            <button onClick={() => fetchProfiles()} className="btn-secondary text-sm">
+              Retry
+            </button>
           </div>
         ) : profiles.length === 0 ? (
           <p className="text-sm text-mid-gray py-8 text-center">No users found</p>
