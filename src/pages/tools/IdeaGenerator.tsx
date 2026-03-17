@@ -1,7 +1,7 @@
-import { useState, useCallback, type KeyboardEvent } from 'react';
+import { useState, useCallback, useEffect, type KeyboardEvent } from 'react';
 import { useStore } from '@/stores/useStore';
 import { supabase } from '@/lib/supabase';
-import { Sparkles, X, Loader2, MapPin, Car, DollarSign, Users, Plus, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { Sparkles, X, Loader2, MapPin, Car, DollarSign, Users, Plus, RefreshCw, CheckCircle2, Clock, UserCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 // ── Types ──
@@ -11,6 +11,7 @@ interface Activity {
   description: string;
   whySuitable: string;
   estimatedCost: string;
+  estimatedDuration: string;
   accessibilityNotes: string;
   ndisFundingEligible: boolean;
   suggestedVenues: string[];
@@ -22,7 +23,7 @@ type GroupSizeOption = 'Individual' | 'Small Group (2-4)' | 'Large Group (5+)';
 // ── Component ──
 
 export default function IdeaGenerator() {
-  const { clients } = useStore();
+  const { clients, carePlans } = useStore();
 
   // Form state
   const [location, setLocation] = useState('');
@@ -34,6 +35,7 @@ export default function IdeaGenerator() {
   const [budget, setBudget] = useState<BudgetOption>('free');
   const [groupSize, setGroupSize] = useState<GroupSizeOption>('Individual');
   const [selectedClientId, setSelectedClientId] = useState('');
+  const [autoFilled, setAutoFilled] = useState(false);
 
   // Results state
   const [activities, setActivities] = useState<Activity[]>([]);
@@ -61,6 +63,48 @@ export default function IdeaGenerator() {
   };
 
   const selectedClient = selectedClientId ? clients.find((c) => c.id === selectedClientId) : null;
+
+  // Auto-fill from participant profile + care plan
+  useEffect(() => {
+    if (!selectedClient) {
+      if (autoFilled) {
+        // Clear auto-filled data when deselecting participant
+        setLocation('');
+        setInterests([]);
+        setSupportNeeds('');
+        setAutoFilled(false);
+      }
+      return;
+    }
+
+    // Auto-fill location from suburb + postcode
+    const parts = [selectedClient.suburb, selectedClient.postcode].filter(Boolean);
+    if (parts.length > 0) {
+      setLocation(parts.join(', '));
+    }
+
+    // Auto-fill from care plan
+    const carePlan = carePlans.find((cp) => cp.clientId === selectedClient.id);
+    if (carePlan) {
+      // Parse likes/preferences into interest tags
+      if (carePlan.likesAndPreferences) {
+        const parsed = carePlan.likesAndPreferences
+          .split(/[,;\n]+/)
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0 && s.length < 50);
+        if (parsed.length > 0) {
+          setInterests(parsed);
+        }
+      }
+
+      // Auto-fill support needs
+      if (carePlan.supportNeedsSummary) {
+        setSupportNeeds(carePlan.supportNeedsSummary);
+      }
+    }
+
+    setAutoFilled(true);
+  }, [selectedClientId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleGenerate = async () => {
     if (!location.trim()) {
@@ -147,6 +191,35 @@ export default function IdeaGenerator() {
         {/* Left panel - Form */}
         <div className="lg:col-span-2 space-y-5">
           <div className="card space-y-5">
+            {/* Link to participant - moved to top for auto-fill */}
+            <div>
+              <label className="block text-sm font-medium text-charcoal mb-1.5">
+                <UserCircle size={14} className="inline mr-1" />
+                Link to Participant <span className="text-mid-gray font-normal">(optional)</span>
+              </label>
+              <select
+                value={selectedClientId}
+                onChange={(e) => setSelectedClientId(e.target.value)}
+                className="input-field"
+              >
+                <option value="">-- None --</option>
+                {clients
+                  .filter((c) => c.status === 'Active')
+                  .sort((a, b) => a.lastName.localeCompare(b.lastName))
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.firstName} {c.lastName}
+                    </option>
+                  ))}
+              </select>
+              {autoFilled && selectedClient && (
+                <p className="text-xs text-forest mt-1.5 flex items-center gap-1">
+                  <CheckCircle2 size={12} />
+                  Auto-filled location, interests &amp; support needs from {selectedClient.firstName}'s profile
+                </p>
+              )}
+            </div>
+
             {/* Location */}
             <div>
               <label className="block text-sm font-medium text-charcoal mb-1.5">
@@ -304,28 +377,6 @@ export default function IdeaGenerator() {
               </div>
             </div>
 
-            {/* Link to client */}
-            <div>
-              <label className="block text-sm font-medium text-charcoal mb-1.5">
-                Link to Participant <span className="text-mid-gray font-normal">(optional)</span>
-              </label>
-              <select
-                value={selectedClientId}
-                onChange={(e) => setSelectedClientId(e.target.value)}
-                className="input-field"
-              >
-                <option value="">-- None --</option>
-                {clients
-                  .filter((c) => c.status === 'Active')
-                  .sort((a, b) => a.lastName.localeCompare(b.lastName))
-                  .map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.firstName} {c.lastName}
-                    </option>
-                  ))}
-              </select>
-            </div>
-
             {/* Error */}
             {error && (
               <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
@@ -432,6 +483,12 @@ export default function IdeaGenerator() {
                       <DollarSign size={12} />
                       {activity.estimatedCost}
                     </span>
+                    {activity.estimatedDuration && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 text-blue-700 text-xs font-medium rounded-full border border-blue-200">
+                        <Clock size={12} />
+                        {activity.estimatedDuration}
+                      </span>
+                    )}
                   </div>
 
                   {/* Accessibility */}

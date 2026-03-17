@@ -82,6 +82,7 @@ For each activity, consider:
 - Whether it could be NDIS-funded under capacity building or community participation
 - Local venues or providers in the area
 - How it matches the participant's interests and support needs
+- Estimated duration for a typical session
 
 Respond with valid JSON as an array in this exact structure:
 [
@@ -90,6 +91,7 @@ Respond with valid JSON as an array in this exact structure:
     "description": "2-3 sentence description of the activity",
     "whySuitable": "Why this activity is great for the participant based on their interests and needs",
     "estimatedCost": "$X per session / Free / etc",
+    "estimatedDuration": "1-2 hours / 30 minutes / Half day / etc",
     "accessibilityNotes": "Accessibility features and considerations",
     "ndisFundingEligible": true,
     "suggestedVenues": ["Venue Name 1", "Venue Name 2"]
