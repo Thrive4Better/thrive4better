@@ -28,6 +28,7 @@ import { useStore } from '@/stores/useStore';
 import { usePermissions } from '@/hooks/usePermissions';
 import type { ComplianceStatus } from '@/types';
 import { cn, formatCurrency } from '@/lib/utils';
+import { exportToCsv } from '@/lib/export-utils';
 
 // ── Constants ──
 
@@ -42,17 +43,6 @@ function calcComplianceStatus(expiryDate: string): ComplianceStatus {
   if (days < 0) return 'expired';
   if (days <= 30) return 'expiring_soon';
   return 'valid';
-}
-
-function downloadCsv(filename: string, headers: string[], rows: string[][]) {
-  const csvContent = [headers.join(','), ...rows.map((r) => r.map((v) => `"${v}"`).join(','))].join('\n');
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(link.href);
-  toast.success(`Downloaded ${filename}`);
 }
 
 // ── Component ──
@@ -201,7 +191,7 @@ export default function Reports() {
 
   // ── CSV exports ──
   const exportRevenue = useCallback(() => {
-    downloadCsv(
+    exportToCsv(
       'revenue-by-client.csv',
       ['Client', 'Total Revenue'],
       revenueData.clientRevenue.map((r) => [r.clientName, r.total.toFixed(2)]),
@@ -209,7 +199,7 @@ export default function Reports() {
   }, [revenueData]);
 
   const exportShifts = useCallback(() => {
-    downloadCsv(
+    exportToCsv(
       'shifts-by-carer.csv',
       ['Carer', 'Total Hours'],
       shiftsData.carerHours.map((r) => [r.carerName, r.hours.toFixed(2)]),
@@ -217,7 +207,7 @@ export default function Reports() {
   }, [shiftsData]);
 
   const exportBudget = useCallback(() => {
-    downloadCsv(
+    exportToCsv(
       'budget-utilization.csv',
       ['Client', 'Total Budget', 'Total Spent', 'Utilization %'],
       budgetData.map((r) => [r.clientName, r.totalBudget.toFixed(2), r.totalSpent.toFixed(2), `${r.pct}%`]),
@@ -225,7 +215,7 @@ export default function Reports() {
   }, [budgetData]);
 
   const exportCompliance = useCallback(() => {
-    downloadCsv(
+    exportToCsv(
       'compliance-overview.csv',
       ['Carer', 'Valid', 'Expiring Soon', 'Expired', 'Pending'],
       complianceData.map((r) => [

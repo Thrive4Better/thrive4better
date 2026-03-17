@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '@/stores/useStore';
 import { formatCurrency, formatDate, cn } from '@/lib/utils';
+import { exportToCsv, fmtCurrencyPlain } from '@/lib/export-utils';
 import StatusBadge from '@/components/ui/StatusBadge';
 import EmptyState from '@/components/ui/EmptyState';
 import ConfirmModal from '@/components/ui/ConfirmModal';
@@ -202,6 +203,30 @@ export default function InvoiceList() {
           <p className="text-sm text-mid-gray mt-1">Manage and track NDIS invoices</p>
         </div>
         <div className="flex gap-3">
+          <button
+            onClick={() => {
+              const headers = ['Invoice Number', 'Client Name', 'Invoice Date', 'Due Date', 'Status', 'Subtotal', 'GST', 'Total'];
+              const rows = filteredInvoices.map((inv) => {
+                const c = getClientById(inv.clientId);
+                const clientName = c ? `${c.firstName} ${c.lastName}` : 'Unknown';
+                return [
+                  inv.invoiceNumber,
+                  clientName,
+                  inv.invoiceDate,
+                  inv.dueDate,
+                  inv.status,
+                  fmtCurrencyPlain(inv.subtotal),
+                  fmtCurrencyPlain(inv.gstAmount),
+                  fmtCurrencyPlain(inv.total),
+                ];
+              });
+              exportToCsv('invoices.csv', headers, rows);
+            }}
+            className="btn-secondary"
+          >
+            <Download size={16} />
+            Export CSV
+          </button>
           <button onClick={() => navigate('/invoices/rates')} className="btn-secondary">
             <DollarSign size={16} />
             NDIS Rates

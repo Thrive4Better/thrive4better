@@ -4,6 +4,7 @@ import {
   Text,
   View,
   StyleSheet,
+  Image,
 } from '@react-pdf/renderer';
 import type { Invoice, InvoiceLineItem, Client } from '@/types';
 import { format } from 'date-fns';
@@ -300,7 +301,7 @@ export default function InvoicePdf({ invoice, client }: InvoicePdfProps) {
         {/* Header */}
         <View style={s.header}>
           <View style={s.headerLeft}>
-            <Text style={s.headerBrand}>Thrive 4 Better</Text>
+            <Image src="/logo.jpeg" style={{ width: 120, height: 'auto' }} />
             <Text style={s.headerSub}>ABN: 15 694 748 297</Text>
             <Text style={s.headerSub}>20 Zelkova Cct, Fraser Rise VIC 3336</Text>
           </View>

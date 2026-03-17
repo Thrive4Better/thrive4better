@@ -25,6 +25,14 @@ const pageTitles: Record<string, { title: string; breadcrumb: string[] }> = {
   '/my-timesheet': { title: 'My Timesheet', breadcrumb: ['My Work'] },
   '/admin/users': { title: 'User Management', breadcrumb: ['Admin'] },
   '/settings': { title: 'Settings', breadcrumb: ['Settings'] },
+  '/accounting/chart-of-accounts': { title: 'Chart of Accounts', breadcrumb: ['Accounting', 'Chart of Accounts'] },
+  '/accounting/transactions': { title: 'Transactions', breadcrumb: ['Accounting', 'Transactions'] },
+  '/accounting/reconciliation': { title: 'Bank Reconciliation', breadcrumb: ['Accounting', 'Reconciliation'] },
+  '/accounting/bas': { title: 'BAS / GST Report', breadcrumb: ['Accounting', 'BAS / GST'] },
+  '/accounting/profit-and-loss': { title: 'Profit & Loss', breadcrumb: ['Accounting', 'Profit & Loss'] },
+  '/accounting/balance-sheet': { title: 'Balance Sheet', breadcrumb: ['Accounting', 'Balance Sheet'] },
+  '/accounting/cash-flow': { title: 'Cash Flow Statement', breadcrumb: ['Accounting', 'Cash Flow'] },
+  '/tools/support-plans': { title: 'AI Support Plans', breadcrumb: ['AI Tools', 'Support Plans'] },
 };
 
 export default function Header() {

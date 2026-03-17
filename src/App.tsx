@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
@@ -21,10 +22,21 @@ import IncidentList from '@/pages/incidents/IncidentList';
 import ComplianceTracker from '@/pages/compliance/ComplianceTracker';
 import Reports from '@/pages/reports/Reports';
 import IdeaGenerator from '@/pages/tools/IdeaGenerator';
+import SupportPlanInfo from '@/pages/tools/SupportPlanInfo';
 import MyShifts from '@/pages/staff/MyShifts';
 import MyTimesheet from '@/pages/staff/MyTimesheet';
 import UserManagement from '@/pages/admin/UserManagement';
 import Settings from '@/pages/settings/Settings';
+import LoadingSpinner from '@/components/ui/LoadingSpinner';
+
+// Lazy-loaded accounting pages
+const ChartOfAccounts = lazy(() => import('@/pages/accounting/ChartOfAccounts'));
+const Transactions = lazy(() => import('@/pages/accounting/Transactions'));
+const BankReconciliation = lazy(() => import('@/pages/accounting/BankReconciliation'));
+const BASReport = lazy(() => import('@/pages/accounting/BASReport'));
+const ProfitAndLoss = lazy(() => import('@/pages/accounting/ProfitAndLoss'));
+const BalanceSheet = lazy(() => import('@/pages/accounting/BalanceSheet'));
+const CashFlow = lazy(() => import('@/pages/accounting/CashFlow'));
 
 function DashboardRouter() {
   const { role } = useAuth();
@@ -72,6 +84,7 @@ export default function App() {
               <Route path="/incidents/new" element={<IncidentList />} />
               <Route path="/tools/ideas" element={<IdeaGenerator />} />
               <Route path="/tools/idea-generator" element={<IdeaGenerator />} />
+              <Route path="/tools/support-plans" element={<SupportPlanInfo />} />
               <Route path="/settings" element={<Settings />} />
 
               {/* Staff-only routes */}
@@ -86,6 +99,13 @@ export default function App() {
                 <Route path="/compliance" element={<ComplianceTracker />} />
                 <Route path="/invoices/claims" element={<ClaimTracker />} />
                 <Route path="/reports" element={<Reports />} />
+                <Route path="/accounting/chart-of-accounts" element={<Suspense fallback={<LoadingSpinner />}><ChartOfAccounts /></Suspense>} />
+                <Route path="/accounting/transactions" element={<Suspense fallback={<LoadingSpinner />}><Transactions /></Suspense>} />
+                <Route path="/accounting/reconciliation" element={<Suspense fallback={<LoadingSpinner />}><BankReconciliation /></Suspense>} />
+                <Route path="/accounting/bas" element={<Suspense fallback={<LoadingSpinner />}><BASReport /></Suspense>} />
+                <Route path="/accounting/profit-and-loss" element={<Suspense fallback={<LoadingSpinner />}><ProfitAndLoss /></Suspense>} />
+                <Route path="/accounting/balance-sheet" element={<Suspense fallback={<LoadingSpinner />}><BalanceSheet /></Suspense>} />
+                <Route path="/accounting/cash-flow" element={<Suspense fallback={<LoadingSpinner />}><CashFlow /></Suspense>} />
               </Route>
 
               {/* Admin-only routes */}

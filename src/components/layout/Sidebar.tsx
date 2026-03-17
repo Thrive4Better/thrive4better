@@ -17,6 +17,14 @@ import {
   BarChart3,
   Sparkles,
   UserCog,
+  Landmark,
+  ArrowLeftRight,
+  CheckCircle,
+  FileSpreadsheet,
+  TrendingUp,
+  Scale,
+  Banknote,
+  Brain,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -63,14 +71,16 @@ export default function Sidebar() {
         { to: '/roster', icon: Calendar, label: 'Weekly Roster' },
         { to: '/roster/shifts', icon: Clock, label: 'Shifts' },
         { to: '/roster/carers', icon: UserCheck, label: 'Carers' },
-        { to: '/roster/timesheets', icon: Timer, label: 'Timesheets' },
+        ...(isAdminOrManager
+          ? [{ to: '/roster/timesheets', icon: Timer, label: 'Timesheets' } as NavItem]
+          : []),
       ],
     },
     {
-      label: 'COMPLIANCE',
+      label: 'COMPLIANCE & SAFETY',
       items: [
         { to: '/incidents', icon: AlertTriangle, label: 'Incidents' },
-        { to: '/compliance', icon: ShieldCheck, label: 'Compliance' },
+        { to: '/compliance', icon: ShieldCheck, label: 'Compliance Tracker' },
       ],
     },
     {
@@ -79,16 +89,29 @@ export default function Sidebar() {
         { to: '/invoices', icon: FileText, label: 'Invoices' },
         { to: '/invoices/new', icon: FilePlus, label: 'Invoice Builder' },
         { to: '/invoices/rates', icon: DollarSign, label: 'NDIS Rates' },
-        { to: '/invoices/claims', icon: Receipt, label: 'Claims' },
+        { to: '/invoices/claims', icon: Receipt, label: 'Claim Tracker' },
       ],
     },
   ];
 
   if (isAdminOrManager) {
     navSections.push({
+      label: 'ACCOUNTING',
+      items: [
+        { to: '/accounting/chart-of-accounts', icon: Landmark, label: 'Chart of Accounts' },
+        { to: '/accounting/transactions', icon: ArrowLeftRight, label: 'Transactions' },
+        { to: '/accounting/reconciliation', icon: CheckCircle, label: 'Bank Reconciliation' },
+        { to: '/accounting/bas', icon: FileSpreadsheet, label: 'BAS / GST' },
+        { to: '/accounting/profit-and-loss', icon: TrendingUp, label: 'Profit & Loss' },
+        { to: '/accounting/balance-sheet', icon: Scale, label: 'Balance Sheet' },
+        { to: '/accounting/cash-flow', icon: Banknote, label: 'Cash Flow' },
+      ],
+    });
+
+    navSections.push({
       label: 'REPORTS',
       items: [
-        { to: '/reports', icon: BarChart3, label: 'Reports' },
+        { to: '/reports', icon: BarChart3, label: 'Reports & Analytics' },
       ],
     });
   }
@@ -96,7 +119,8 @@ export default function Sidebar() {
   navSections.push({
     label: 'AI TOOLS',
     items: [
-      { to: '/tools/ideas', icon: Sparkles, label: 'Idea Generator' },
+      { to: '/tools/ideas', icon: Sparkles, label: 'Activity Ideas' },
+      { to: '/tools/support-plans', icon: Brain, label: 'Support Plan Generator' },
     ],
   });
 
