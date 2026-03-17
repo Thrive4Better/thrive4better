@@ -5,6 +5,7 @@ const supabaseUrl = process.env.VITE_SUPABASE_URL!;
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID;
 const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
+const twilioMessagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID;
 const twilioPhoneNumber = process.env.TWILIO_PHONE_NUMBER;
 
 const corsHeaders = {
@@ -54,7 +55,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // Check if Twilio is configured
-    if (!twilioAccountSid || !twilioAuthToken || !twilioPhoneNumber) {
+    if (!twilioAccountSid || !twilioAuthToken || (!twilioMessagingServiceSid && !twilioPhoneNumber)) {
       console.warn('Twilio not configured - SMS not sent');
       return res.status(200).json({
         success: false,
@@ -67,11 +68,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`;
     const credentials = Buffer.from(`${twilioAccountSid}:${twilioAuthToken}`).toString('base64');
 
+    // Prefer Messaging Service over raw phone number
     const body = new URLSearchParams({
       To: to,
-      From: twilioPhoneNumber,
       Body: message,
     });
+    if (twilioMessagingServiceSid) {
+      body.set('MessagingServiceSid', twilioMessagingServiceSid);
+    } else {
+      body.set('From', twilioPhoneNumber!);
+    }
 
     const twilioRes = await fetch(twilioUrl, {
       method: 'POST',

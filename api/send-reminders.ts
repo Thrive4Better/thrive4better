@@ -5,6 +5,7 @@ const supabaseUrl = process.env.VITE_SUPABASE_URL!;
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID;
 const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
+const twilioMessagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID;
 const twilioPhoneNumber = process.env.TWILIO_PHONE_NUMBER;
 
 const corsHeaders = {
@@ -22,7 +23,7 @@ function formatTime12(time: string): string {
 }
 
 async function sendSms(to: string, message: string): Promise<{ success: boolean; error?: string; simulated?: boolean }> {
-  if (!twilioAccountSid || !twilioAuthToken || !twilioPhoneNumber) {
+  if (!twilioAccountSid || !twilioAuthToken || (!twilioMessagingServiceSid && !twilioPhoneNumber)) {
     return { success: false, simulated: true, error: 'Twilio not configured' };
   }
 
@@ -31,9 +32,13 @@ async function sendSms(to: string, message: string): Promise<{ success: boolean;
 
   const body = new URLSearchParams({
     To: to,
-    From: twilioPhoneNumber,
     Body: message,
   });
+  if (twilioMessagingServiceSid) {
+    body.set('MessagingServiceSid', twilioMessagingServiceSid);
+  } else {
+    body.set('From', twilioPhoneNumber!);
+  }
 
   try {
     const res = await fetch(twilioUrl, {
