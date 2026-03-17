@@ -7,8 +7,6 @@ import {
   Clock,
   UserCheck,
   FileText,
-  FilePlus,
-  DollarSign,
   Settings,
   AlertTriangle,
   ShieldCheck,
@@ -25,6 +23,10 @@ import {
   Scale,
   Banknote,
   X,
+  Wallet,
+  CreditCard,
+  FolderOpen,
+  UserPlus,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/hooks/usePermissions';
@@ -63,6 +65,8 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
     ROSTER:                 { color: 'text-violet-600',   dotColor: 'bg-violet-500' },
     'COMPLIANCE & SAFETY':  { color: 'text-amber-600',    dotColor: 'bg-amber-500' },
     FINANCE:                { color: 'text-emerald-600',  dotColor: 'bg-emerald-500' },
+    PAYROLL:                { color: 'text-pink-600',     dotColor: 'bg-pink-500' },
+    DOCUMENTS:              { color: 'text-cyan-600',     dotColor: 'bg-cyan-500' },
     ACCOUNTING:             { color: 'text-teal-600',     dotColor: 'bg-teal-500' },
     REPORTS:                { color: 'text-indigo-600',   dotColor: 'bg-indigo-500' },
     'AI TOOLS':             { color: 'text-purple-600',   dotColor: 'bg-purple-500' },
@@ -110,14 +114,22 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
       ...sectionColors.FINANCE,
       items: [
         { to: '/invoices', icon: FileText, label: 'Invoices' },
-        { to: '/invoices/new', icon: FilePlus, label: 'Invoice Builder' },
-        { to: '/invoices/rates', icon: DollarSign, label: 'NDIS Rates' },
+        { to: '/contractor-invoices', icon: Receipt, label: 'Contractor Invoices' },
         { to: '/invoices/claims', icon: Receipt, label: 'Claim Tracker' },
       ],
     },
   ];
 
   if (isAdminOrManager) {
+    navSections.push({
+      label: 'PAYROLL',
+      ...sectionColors.PAYROLL,
+      items: [
+        { to: '/payroll', icon: Wallet, label: 'Pay Runs' },
+        { to: '/payroll/new', icon: CreditCard, label: 'New Pay Run' },
+      ],
+    });
+
     navSections.push({
       label: 'ACCOUNTING',
       ...sectionColors.ACCOUNTING,
@@ -142,6 +154,14 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
   }
 
   navSections.push({
+    label: 'DOCUMENTS',
+    ...sectionColors.DOCUMENTS,
+    items: [
+      { to: '/documents', icon: FolderOpen, label: 'Document Library' },
+    ],
+  });
+
+  navSections.push({
     label: 'AI TOOLS',
     ...sectionColors['AI TOOLS'],
     items: [
@@ -155,6 +175,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
       ...sectionColors.ADMIN,
       items: [
         { to: '/admin/users', icon: UserCog, label: 'User Management' },
+        { to: '/admin/onboarding', icon: UserPlus, label: 'Onboarding' },
       ],
     });
   }

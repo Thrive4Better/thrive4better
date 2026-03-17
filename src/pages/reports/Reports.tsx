@@ -20,6 +20,8 @@ import {
   Pie,
   Cell,
   Legend,
+  LineChart,
+  Line,
 } from 'recharts';
 import { Download } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -32,7 +34,7 @@ import { exportToCsv } from '@/lib/export-utils';
 
 // ── Constants ──
 
-const TABS = ['Revenue', 'Shifts', 'Budget', 'Compliance'] as const;
+const TABS = ['Revenue', 'Shifts', 'Budget', 'Compliance', 'Satisfaction'] as const;
 type Tab = (typeof TABS)[number];
 
 const CHART_COLORS = ['#2D5A3D', '#7A9E7E', '#8B2252', '#6B7280', '#F59E0B', '#3B82F6'];
@@ -54,6 +56,7 @@ export default function Reports() {
     clients,
     carers,
     complianceRecords,
+    activityReviews,
     getClientById,
     getCarerById,
   } = useStore();
@@ -188,6 +191,110 @@ export default function Reports() {
       };
     });
   }, [complianceRecords, getCarerById]);
+
+  // ── Satisfaction Data ──
+  const satisfactionData = useMemo(() => {
+    if (activityReviews.length === 0) return { monthly: [], byServiceType: [], moodDistribution: [], carerRatings: [], recentFeedback: [] };
+
+    // Monthly satisfaction trend
+    const now = new Date();
+    const months = eachMonthOfInterval({
+      start: subMonths(startOfMonth(now), 11),
+      end: endOfMonth(now),
+    });
+
+    const monthly = months.map((month) => {
+      const monthStart = startOfMonth(month);
+      const monthEnd = endOfMonth(month);
+      const monthReviews = activityReviews.filter((r) => {
+        try {
+          const d = parseISO(r.createdAt);
+          return d >= monthStart && d <= monthEnd;
+        } catch {
+          return false;
+        }
+      });
+      const avgActivity = monthReviews.length > 0
+        ? monthReviews.reduce((s, r) => s + r.activityRating, 0) / monthReviews.length
+        : 0;
+      const avgCarer = monthReviews.length > 0
+        ? monthReviews.reduce((s, r) => s + r.carerRating, 0) / monthReviews.length
+        : 0;
+      return {
+        month: format(month, 'MMM yyyy'),
+        activityRating: Math.round(avgActivity * 10) / 10,
+        carerRating: Math.round(avgCarer * 10) / 10,
+        count: monthReviews.length,
+      };
+    });
+
+    // By service type
+    const byTypeMap = new Map<string, { total: number; count: number }>();
+    activityReviews.forEach((r) => {
+      const shift = shifts.find((s) => s.id === r.shiftId);
+      const type = shift?.serviceType || 'Other';
+      const existing = byTypeMap.get(type) || { total: 0, count: 0 };
+      existing.total += r.activityRating;
+      existing.count += 1;
+      byTypeMap.set(type, existing);
+    });
+    const byServiceType = Array.from(byTypeMap.entries()).map(([name, { total, count }]) => ({
+      name,
+      avgRating: Math.round((total / count) * 10) / 10,
+      count,
+    }));
+
+    // Mood distribution
+    const moodMap = new Map<string, number>();
+    activityReviews.forEach((r) => {
+      moodMap.set(r.mood, (moodMap.get(r.mood) || 0) + 1);
+    });
+    const moodLabels: Record<string, string> = {
+      great: 'Great', good: 'Good', okay: 'Okay', not_great: 'Not Great', bad: 'Bad',
+    };
+    const moodDistribution = Array.from(moodMap.entries()).map(([mood, value]) => ({
+      name: moodLabels[mood] || mood,
+      value,
+    }));
+
+    // Carer ratings (admin only)
+    const carerMap = new Map<string, { total: number; count: number }>();
+    activityReviews.forEach((r) => {
+      const existing = carerMap.get(r.carerId) || { total: 0, count: 0 };
+      existing.total += r.carerRating;
+      existing.count += 1;
+      carerMap.set(r.carerId, existing);
+    });
+    const carerRatings = Array.from(carerMap.entries())
+      .map(([carerId, { total, count }]) => {
+        const carer = getCarerById(carerId);
+        return {
+          carerId,
+          carerName: carer ? `${carer.firstName} ${carer.lastName}` : 'Unknown',
+          avgRating: Math.round((total / count) * 10) / 10,
+          count,
+        };
+      })
+      .sort((a, b) => b.avgRating - a.avgRating);
+
+    // Recent feedback
+    const recentFeedback = [...activityReviews]
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, 10)
+      .map((r) => {
+        const shift = shifts.find((s) => s.id === r.shiftId);
+        const client = getClientById(r.clientId);
+        const carer = getCarerById(r.carerId);
+        return {
+          ...r,
+          clientName: client ? `${client.firstName} ${client.lastName}` : 'Unknown',
+          carerName: carer ? `${carer.firstName} ${carer.lastName}` : 'Unknown',
+          serviceType: shift?.serviceType || 'Unknown',
+        };
+      });
+
+    return { monthly, byServiceType, moodDistribution, carerRatings, recentFeedback };
+  }, [activityReviews, shifts, getClientById, getCarerById]);
 
   // ── CSV exports ──
   const exportRevenue = useCallback(() => {
@@ -517,6 +624,152 @@ export default function Reports() {
                 </table>
               </div>
             </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'Satisfaction' && (
+        <div className="space-y-6">
+          <h2 className="text-lg font-semibold text-charcoal">Client Satisfaction</h2>
+
+          {activityReviews.length === 0 ? (
+            <div className="card p-8 text-center text-mid-gray">
+              No review data available yet.
+            </div>
+          ) : (
+            <>
+              {/* Satisfaction over time */}
+              <div className="card p-6">
+                <h3 className="font-semibold text-charcoal mb-4">Satisfaction Over Time</h3>
+                <ResponsiveContainer width="100%" height={300}>
+                  <LineChart data={satisfactionData.monthly.filter((m) => m.count > 0)}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <XAxis dataKey="month" tick={{ fontSize: 12 }} />
+                    <YAxis domain={[0, 5]} tick={{ fontSize: 12 }} />
+                    <Tooltip />
+                    <Legend />
+                    <Line type="monotone" dataKey="activityRating" name="Activity Rating" stroke="#F59E0B" strokeWidth={2} dot={{ r: 4 }} />
+                    <Line type="monotone" dataKey="carerRating" name="Carer Rating" stroke="#2D5A3D" strokeWidth={2} dot={{ r: 4 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Average rating by service type */}
+                <div className="card p-6">
+                  <h3 className="font-semibold text-charcoal mb-4">Avg Rating by Activity Type</h3>
+                  {satisfactionData.byServiceType.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={250}>
+                      <BarChart data={satisfactionData.byServiceType}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                        <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                        <YAxis domain={[0, 5]} tick={{ fontSize: 12 }} />
+                        <Tooltip />
+                        <Bar dataKey="avgRating" name="Avg Rating" fill="#7A9E7E" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <p className="text-center text-mid-gray py-8">No data</p>
+                  )}
+                </div>
+
+                {/* Mood distribution */}
+                <div className="card p-6">
+                  <h3 className="font-semibold text-charcoal mb-4">Mood Distribution</h3>
+                  {satisfactionData.moodDistribution.length > 0 ? (
+                    <ResponsiveContainer width="100%" height={250}>
+                      <PieChart>
+                        <Pie
+                          data={satisfactionData.moodDistribution}
+                          cx="50%"
+                          cy="50%"
+                          outerRadius={90}
+                          fill="#8884d8"
+                          dataKey="value"
+                          label={({ name, percent }) => `${name} (${((percent ?? 0) * 100).toFixed(0)}%)`}
+                        >
+                          {satisfactionData.moodDistribution.map((_, index) => (
+                            <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip />
+                        <Legend />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <p className="text-center text-mid-gray py-8">No data</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Carer ratings comparison (admin only) */}
+              {satisfactionData.carerRatings.length > 0 && (
+                <div className="card overflow-hidden">
+                  <div className="px-4 py-3 border-b border-sage-pale bg-sage-pale/20">
+                    <h3 className="font-semibold text-charcoal">Carer Ratings (Admin Only)</h3>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr>
+                          <th className="table-header">Carer</th>
+                          <th className="table-header text-center">Avg Rating</th>
+                          <th className="table-header text-center">Reviews</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {satisfactionData.carerRatings.map((row) => (
+                          <tr key={row.carerId} className="border-b border-sage-pale/50 hover:bg-sage-pale/20 transition-colors">
+                            <td className="table-cell text-sm font-medium text-charcoal">{row.carerName}</td>
+                            <td className="table-cell text-center">
+                              <span className={cn(
+                                'text-sm font-semibold',
+                                row.avgRating >= 4 ? 'text-green-600' : row.avgRating >= 3 ? 'text-amber-600' : 'text-red-600',
+                              )}>
+                                {row.avgRating}/5
+                              </span>
+                            </td>
+                            <td className="table-cell text-center text-sm text-mid-gray">{row.count}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Recent feedback */}
+              <div className="card overflow-hidden">
+                <div className="px-4 py-3 border-b border-sage-pale bg-sage-pale/20">
+                  <h3 className="font-semibold text-charcoal">Recent Feedback</h3>
+                </div>
+                <div className="divide-y divide-sage-pale/50">
+                  {satisfactionData.recentFeedback.map((fb) => (
+                    <div key={fb.id} className="px-4 py-3">
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-charcoal">{fb.clientName}</span>
+                          <span className="text-xs text-mid-gray">{fb.serviceType}</span>
+                        </div>
+                        <div className="flex items-center gap-3 text-xs">
+                          <span className="text-amber-600">Activity: {fb.activityRating}/5</span>
+                          <span className="text-forest">Carer: {fb.carerRating}/5</span>
+                        </div>
+                      </div>
+                      <p className="text-xs text-mid-gray">
+                        Carer: {fb.carerName} | {fb.createdAt ? format(parseISO(fb.createdAt), 'dd MMM yyyy') : ''}
+                      </p>
+                      {fb.activityFeedback && (
+                        <p className="text-sm text-charcoal mt-1">{fb.activityFeedback}</p>
+                      )}
+                    </div>
+                  ))}
+                  {satisfactionData.recentFeedback.length === 0 && (
+                    <div className="px-4 py-6 text-center text-mid-gray text-sm">No feedback yet</div>
+                  )}
+                </div>
+              </div>
+            </>
           )}
         </div>
       )}

@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import StaffSidebar from './StaffSidebar';
+import ClientSidebar from './ClientSidebar';
 import Header from './Header';
 import AccountingChatbot from '@/components/ai/AccountingChatbot';
 import { useAuth } from '@/contexts/AuthContext';
@@ -35,7 +36,9 @@ export default function AppLayout() {
         />
       )}
 
-      {role === 'staff' ? (
+      {role === 'client' ? (
+        <ClientSidebar isOpen={sidebarOpen} onClose={closeSidebar} />
+      ) : role === 'staff' ? (
         <StaffSidebar isOpen={sidebarOpen} onClose={closeSidebar} />
       ) : (
         <Sidebar isOpen={sidebarOpen} onClose={closeSidebar} />

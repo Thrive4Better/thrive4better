@@ -17,6 +17,7 @@ import type {
   ClaimSubmission,
   UserInvitation,
   UserProfile,
+  ActivityReview,
 } from '@/types';
 
 // ---------------------------------------------------------------------------
@@ -256,6 +257,7 @@ export function toCarer(row: any): Carer {
     status: row.status,
     notes: row.notes,
     createdAt: row.created_at,
+    isSubcontractor: row.is_subcontractor ?? false,
   };
 }
 
@@ -274,6 +276,7 @@ export function fromCarer(
     status: entity.status,
     notes: entity.notes,
     created_at: (entity as Carer).createdAt,
+    is_subcontractor: entity.isSubcontractor,
   });
 }
 
@@ -715,5 +718,40 @@ export function fromUserInvitation(
     carer_id: entity.carerId,
     invited_by: entity.invitedBy,
     expires_at: entity.expiresAt,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// ActivityReview
+// ---------------------------------------------------------------------------
+
+export function toActivityReview(row: any): ActivityReview {
+  return {
+    id: row.id,
+    shiftId: row.shift_id,
+    clientId: row.client_id,
+    carerId: row.carer_id,
+    activityRating: row.activity_rating,
+    carerRating: row.carer_rating,
+    activityFeedback: row.activity_feedback ?? '',
+    carerFeedback: row.carer_feedback ?? '',
+    mood: row.mood,
+    createdAt: row.created_at,
+  };
+}
+
+export function fromActivityReview(
+  entity: ActivityReview | Omit<ActivityReview, 'id' | 'createdAt'>,
+): Record<string, unknown> {
+  return omitUndefined({
+    id: (entity as ActivityReview).id,
+    shift_id: entity.shiftId,
+    client_id: entity.clientId,
+    carer_id: entity.carerId,
+    activity_rating: entity.activityRating,
+    carer_rating: entity.carerRating,
+    activity_feedback: entity.activityFeedback,
+    carer_feedback: entity.carerFeedback,
+    mood: entity.mood,
   });
 }

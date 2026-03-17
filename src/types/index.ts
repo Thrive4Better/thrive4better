@@ -23,6 +23,9 @@ export interface Client {
   status: 'Active' | 'Inactive' | 'On Hold' | 'Archived';
   notes: string;
   supportCategories: ClientSupportCategory[];
+  nominatedContactName?: string;
+  nominatedContactPhone?: string;
+  nominatedContactRelation?: string;
   createdAt: string;
 }
 
@@ -75,6 +78,7 @@ export interface Carer {
   qualifications: string[];
   availability: string[];
   status: 'Active' | 'Unavailable' | 'On Leave' | 'Archived';
+  isSubcontractor: boolean;
   notes: string;
   createdAt: string;
 }
@@ -156,7 +160,24 @@ export interface ClientDocument {
 
 // ── RBAC ──
 
-export type UserRole = 'admin' | 'manager' | 'staff';
+export type UserRole = 'admin' | 'manager' | 'staff' | 'client';
+
+// ── Activity Reviews ──
+
+export type ReviewMood = 'great' | 'good' | 'okay' | 'not_great' | 'bad';
+
+export interface ActivityReview {
+  id: string;
+  shiftId: string;
+  clientId: string;
+  carerId: string;
+  activityRating: number; // 1-5
+  carerRating: number; // 1-5
+  activityFeedback: string;
+  carerFeedback: string;
+  mood: ReviewMood;
+  createdAt: string;
+}
 
 export interface UserProfile {
   id: string;
@@ -318,4 +339,122 @@ export interface ModularCarePlan extends CarePlan {
   sections: CarePlanSection[];
   templateVersion: string;
   lastExported?: string;
+}
+
+// ── Payroll ──
+
+export type PayRunStatus = 'Draft' | 'Processing' | 'Completed';
+export type PayFrequency = 'weekly' | 'fortnightly' | 'monthly';
+
+export interface PayRun {
+  id: string;
+  periodStart: string;
+  periodEnd: string;
+  frequency: PayFrequency;
+  status: PayRunStatus;
+  totalGross: number;
+  totalSuper: number;
+  totalPAYG: number;
+  totalNet: number;
+  lineItems: PayRunLineItem[];
+  processedAt?: string;
+  createdAt: string;
+}
+
+export interface PayRunLineItem {
+  carerId: string;
+  carerName: string;
+  isSubcontractor: boolean;
+  hoursWorked: number;
+  hourlyRate: number;
+  grossPay: number;
+  superAmount: number;
+  paygWithholding: number;
+  allowances: number;
+  deductions: number;
+  netPay: number;
+}
+
+// ── Subcontractor Shift Log ──
+
+export interface ShiftLog {
+  id: string;
+  carerId: string;
+  clientId: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  activityType: string;
+  notes: string;
+  goalsAddressed: string;
+  travelKm: number;
+  createdAt: string;
+}
+
+// ── Contractor Invoices ──
+
+export interface ContractorInvoice {
+  id: string;
+  carerId: string;
+  invoiceNumber: string;
+  invoiceDate: string;
+  dueDate: string;
+  periodStart: string;
+  periodEnd: string;
+  contractorAbn: string;
+  contractorAddress: string;
+  contractorBankName: string;
+  contractorAccountName: string;
+  contractorBsb: string;
+  contractorAccountNumber: string;
+  registeredForGst: boolean;
+  lineItems: ContractorInvoiceLineItem[];
+  subtotal: number;
+  gstAmount: number;
+  total: number;
+  status: 'Draft' | 'Submitted' | 'Approved' | 'Paid' | 'Rejected';
+  submittedAt?: string;
+  approvedBy?: string;
+  approvedAt?: string;
+  rejectionReason?: string;
+  notes?: string;
+  createdAt: string;
+}
+
+export interface ContractorInvoiceLineItem {
+  id: string;
+  description: string;
+  hours: number;
+  rate: number;
+  amount: number;
+  shiftLogId?: string;
+}
+
+export interface RemittanceAdvice {
+  id: string;
+  remittanceNumber: string;
+  contractorInvoiceIds: string[];
+  carerId: string;
+  paymentDate: string;
+  paymentMethod: string;
+  paymentReference: string;
+  periodStart: string;
+  periodEnd: string;
+  subtotal: number;
+  gstAmount: number;
+  withholdingTax: number;
+  totalPaid: number;
+  notes?: string;
+  createdAt: string;
+}
+
+// ── Reminder Settings ──
+
+export interface ReminderSettings {
+  shiftRemindersEnabled: boolean;
+  shiftReminderHoursBefore: number;
+  appointmentRemindersEnabled: boolean;
+  appointmentReminderHoursBefore: number;
+  overdueInvoiceRemindersEnabled: boolean;
+  overdueInvoiceReminderDaysAfter: number;
 }

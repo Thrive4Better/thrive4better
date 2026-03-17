@@ -14,7 +14,27 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'Authorization, Content-Type',
 };
 
+type ReminderType = 'shift' | 'appointment' | 'overdue_invoice';
+
+// ── Message Templates ──
+
+const TEMPLATES = {
+  shift: (carerName: string, clientName: string, time: string, location: string) => {
+    let msg = `Hi ${carerName}, reminder: you have a shift with ${clientName} tomorrow at ${time}`;
+    if (location) msg += ` at ${location}`;
+    msg += '. - Thrive 4 Better';
+    return msg;
+  },
+  appointment: (clientName: string, time: string, date: string) => {
+    return `Hi, this is a reminder that ${clientName} has an appointment on ${date} at ${time}. Please contact us if you need to reschedule. - Thrive 4 Better`;
+  },
+  overdue_invoice: (clientName: string, invoiceNumber: string, amount: string, daysPastDue: number) => {
+    return `Hi, this is a friendly reminder that invoice ${invoiceNumber} for ${clientName} ($${amount}) is ${daysPastDue} day(s) overdue. Please arrange payment at your earliest convenience. - Thrive 4 Better`;
+  },
+};
+
 function formatTime12(time: string): string {
+  if (!time) return '';
   const [hStr, mStr] = time.split(':');
   const h = parseInt(hStr, 10);
   const suffix = h >= 12 ? 'pm' : 'am';
@@ -93,13 +113,120 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    // Accept optional shiftIds array; if not provided, look up tomorrow's shifts
-    const { shiftIds } = req.body || {};
+    const { shiftIds, type = 'shift' } = req.body || {};
+    const reminderType: ReminderType = type;
 
+    let sent = 0;
+    let failed = 0;
+    let simulated = 0;
+    const results: any[] = [];
+
+    // ── Overdue Invoice Reminders ──
+    if (reminderType === 'overdue_invoice') {
+      const today = new Date().toISOString().split('T')[0];
+      const { data: overdueInvoices, error } = await supabase
+        .from('invoices')
+        .select('*')
+        .in('status', ['Sent', 'Overdue'])
+        .lt('due_date', today);
+
+      if (error) {
+        return res.status(500).json({ error: 'Failed to fetch overdue invoices', details: error.message });
+      }
+
+      if (!overdueInvoices || overdueInvoices.length === 0) {
+        return res.status(200).json({ success: true, message: 'No overdue invoices found', sent: 0, failed: 0 });
+      }
+
+      const clientIds = [...new Set(overdueInvoices.map((i: any) => i.client_id).filter(Boolean))];
+      const { data: clientsData } = clientIds.length > 0
+        ? await supabase.from('clients').select('*').in('id', clientIds)
+        : { data: [] };
+      const clientsMap = new Map((clientsData || []).map((c: any) => [c.id, c]));
+
+      for (const invoice of overdueInvoices) {
+        const client = clientsMap.get(invoice.client_id);
+        if (!client) {
+          results.push({ invoiceId: invoice.id, status: 'skipped', reason: 'Client not found' });
+          failed++;
+          continue;
+        }
+
+        // Use nominated contact phone if available, otherwise plan manager phone, then client phone
+        const recipientPhone = client.nominated_contact_phone || client.plan_manager_phone || client.phone;
+        if (!recipientPhone) {
+          results.push({ invoiceId: invoice.id, status: 'skipped', reason: 'No phone number' });
+          failed++;
+          continue;
+        }
+
+        const clientName = `${client.first_name || ''} ${client.last_name || ''}`.trim() || 'your client';
+        const daysPastDue = Math.floor((new Date(today).getTime() - new Date(invoice.due_date).getTime()) / 86400000);
+        const message = TEMPLATES.overdue_invoice(clientName, invoice.invoice_number || invoice.id, invoice.total?.toString() || '0', daysPastDue);
+
+        const smsResult = await sendSms(recipientPhone, message);
+        if (smsResult.simulated) { simulated++; results.push({ invoiceId: invoice.id, status: 'simulated', to: recipientPhone, message }); }
+        else if (smsResult.success) { sent++; results.push({ invoiceId: invoice.id, status: 'sent', to: recipientPhone }); }
+        else { failed++; results.push({ invoiceId: invoice.id, status: 'failed', error: smsResult.error }); }
+      }
+
+      return res.status(200).json({ success: true, message: `Overdue invoice reminders: ${sent} sent, ${simulated} simulated, ${failed} failed`, sent, simulated, failed, results });
+    }
+
+    // ── Appointment Reminders (to clients/nominees) ──
+    if (reminderType === 'appointment') {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const tomorrowStr = tomorrow.toISOString().split('T')[0];
+
+      const { data: tomorrowShifts, error } = await supabase
+        .from('shifts')
+        .select('*')
+        .eq('date', tomorrowStr)
+        .in('status', ['Scheduled', 'Confirmed']);
+
+      if (error) {
+        return res.status(500).json({ error: 'Failed to fetch shifts', details: error.message });
+      }
+
+      if (!tomorrowShifts || tomorrowShifts.length === 0) {
+        return res.status(200).json({ success: true, message: 'No appointments found', sent: 0, failed: 0 });
+      }
+
+      const clientIds = [...new Set(tomorrowShifts.map((s: any) => s.client_id).filter(Boolean))];
+      const { data: clientsData } = clientIds.length > 0
+        ? await supabase.from('clients').select('*').in('id', clientIds)
+        : { data: [] };
+      const clientsMap = new Map((clientsData || []).map((c: any) => [c.id, c]));
+
+      for (const shift of tomorrowShifts) {
+        const client = clientsMap.get(shift.client_id);
+        if (!client) continue;
+
+        // Send to nominated contact if set, otherwise client phone
+        const recipientPhone = client.nominated_contact_phone || client.phone;
+        if (!recipientPhone) {
+          results.push({ shiftId: shift.id, status: 'skipped', reason: 'No phone number' });
+          failed++;
+          continue;
+        }
+
+        const clientName = `${client.first_name || ''} ${client.last_name || ''}`.trim() || 'the participant';
+        const message = TEMPLATES.appointment(clientName, formatTime12(shift.start_time || ''), tomorrowStr);
+
+        const smsResult = await sendSms(recipientPhone, message);
+        if (smsResult.simulated) { simulated++; results.push({ shiftId: shift.id, status: 'simulated', to: recipientPhone, message }); }
+        else if (smsResult.success) { sent++; results.push({ shiftId: shift.id, status: 'sent', to: recipientPhone }); }
+        else { failed++; results.push({ shiftId: shift.id, status: 'failed', error: smsResult.error }); }
+      }
+
+      return res.status(200).json({ success: true, message: `Appointment reminders: ${sent} sent, ${simulated} simulated, ${failed} failed`, sent, simulated, failed, results });
+    }
+
+    // ── Shift Reminders (to carers) ── (default behavior)
     let shifts: any[];
 
     if (shiftIds && Array.isArray(shiftIds) && shiftIds.length > 0) {
-      // Send reminders for specific shifts
       const { data, error } = await supabase
         .from('shifts')
         .select('*')
@@ -110,7 +237,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
       shifts = data || [];
     } else {
-      // Default: fetch tomorrow's shifts
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
       const tomorrowStr = tomorrow.toISOString().split('T')[0];
@@ -153,11 +279,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const carersMap = new Map((carersResult.data || []).map((c: any) => [c.id, c]));
     const clientsMap = new Map((clientsResult.data || []).map((c: any) => [c.id, c]));
 
-    let sent = 0;
-    let failed = 0;
-    let simulated = 0;
-    const results: any[] = [];
-
     for (const shift of shifts) {
       const carer = carersMap.get(shift.carer_id);
       const client = clientsMap.get(shift.client_id);
@@ -175,11 +296,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const location = client?.address || '';
       const startTime = shift.start_time || '';
 
-      let message = `Hi ${carerFirstName}, reminder: you have a shift with ${clientName} tomorrow at ${formatTime12(startTime)}`;
-      if (location) {
-        message += ` at ${location}`;
-      }
-      message += '. - Thrive 4 Better';
+      const message = TEMPLATES.shift(carerFirstName, clientName, formatTime12(startTime), location);
 
       const smsResult = await sendSms(carer.phone, message);
 

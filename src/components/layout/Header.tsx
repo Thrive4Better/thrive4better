@@ -37,6 +37,11 @@ const pageTitles: Record<string, { title: string; breadcrumb: string[] }> = {
   '/accounting/balance-sheet': { title: 'Balance Sheet', breadcrumb: ['Accounting', 'Balance Sheet'] },
   '/accounting/cash-flow': { title: 'Cash Flow Statement', breadcrumb: ['Accounting', 'Cash Flow'] },
   '/tools/support-plans': { title: 'AI Support Plans', breadcrumb: ['AI Tools', 'Support Plans'] },
+  '/payroll': { title: 'Payroll Dashboard', breadcrumb: ['Payroll'] },
+  '/payroll/new': { title: 'New Pay Run', breadcrumb: ['Payroll', 'New Pay Run'] },
+  '/log-shift': { title: 'Log Shift', breadcrumb: ['My Work', 'Log Shift'] },
+  '/documents': { title: 'Document Library', breadcrumb: ['Documents'] },
+  '/admin/onboarding': { title: 'Employee Onboarding', breadcrumb: ['Admin', 'Onboarding'] },
 };
 
 export default function Header({ onToggleSidebar }: HeaderProps) {
@@ -50,6 +55,9 @@ export default function Header({ onToggleSidebar }: HeaderProps) {
     }
     if (location.pathname.match(/\/invoices\/[^/]+\/edit/)) {
       return { title: 'Edit Invoice', breadcrumb: ['Finance', 'Edit Invoice'] };
+    }
+    if (location.pathname.match(/\/payroll\/[^/]+/) && location.pathname !== '/payroll/new') {
+      return { title: 'Pay Run Details', breadcrumb: ['Payroll', 'Pay Run'] };
     }
     return { title: 'Thrive 4 Better', breadcrumb: [] };
   };

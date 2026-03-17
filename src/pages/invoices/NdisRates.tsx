@@ -8,7 +8,12 @@ import toast from 'react-hot-toast';
 
 type EditableFields = Pick<NdisRate, 'supportItemName' | 'lineItemCode' | 'supportCategory' | 'unit' | 'standardRate' | 'eveningRate' | 'nightRate' | 'saturdayRate' | 'sundayRate' | 'publicHolidayRate'>;
 
-export default function NdisRates() {
+interface NdisRatesProps {
+  modalMode?: boolean;
+  onClose?: () => void;
+}
+
+export default function NdisRates({ modalMode, onClose }: NdisRatesProps = {}) {
   const navigate = useNavigate();
   const { ndisRates, updateNdisRate } = useStore();
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -60,15 +65,17 @@ export default function NdisRates() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-3">
-        <button onClick={() => navigate('/invoices')} className="p-2 hover:bg-sage-pale rounded-lg transition-colors">
-          <ArrowLeft size={18} className="text-mid-gray" />
-        </button>
-        <div>
-          <h1 className="text-2xl font-bold text-charcoal">NDIS Support Item Rates</h1>
-          <p className="text-sm text-mid-gray mt-1">Manage hourly rates for NDIS support categories</p>
+      {!modalMode && (
+        <div className="flex items-center gap-3">
+          <button onClick={() => modalMode && onClose ? onClose() : navigate('/invoices')} className="p-2 hover:bg-sage-pale rounded-lg transition-colors">
+            <ArrowLeft size={18} className="text-mid-gray" />
+          </button>
+          <div>
+            <h1 className="text-2xl font-bold text-charcoal">NDIS Support Item Rates</h1>
+            <p className="text-sm text-mid-gray mt-1">Manage hourly rates for NDIS support categories</p>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Table */}
       <div className="card p-0 overflow-hidden">

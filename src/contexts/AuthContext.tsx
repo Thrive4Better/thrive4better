@@ -300,7 +300,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const role: UserRole = profile?.role ?? 'staff';
+  const role: UserRole = profile?.role ?? 'staff' as UserRole;
   const carerId = profile?.carerId ?? null;
 
   return (

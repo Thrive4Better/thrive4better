@@ -63,7 +63,7 @@ function getDefaultSectionContent(type: CarePlanSectionType): string {
 
 // ── Tab types ───────────────────────────────────────────────────────────────
 
-type TabId = 'overview' | 'care-plan' | 'shifts' | 'invoices' | 'documents';
+type TabId = 'overview' | 'care-plan' | 'shifts' | 'invoices' | 'documents' | 'reviews';
 
 const TABS: { id: TabId; label: string; icon: typeof User }[] = [
   { id: 'overview', label: 'Overview', icon: User },
@@ -71,6 +71,7 @@ const TABS: { id: TabId; label: string; icon: typeof User }[] = [
   { id: 'shifts', label: 'Shifts', icon: Calendar },
   { id: 'invoices', label: 'Invoices', icon: FileText },
   { id: 'documents', label: 'Documents', icon: FolderOpen },
+  { id: 'reviews', label: 'Reviews', icon: Target },
 ];
 
 // ── File type icon helper ───────────────────────────────────────────────────
@@ -95,6 +96,7 @@ export default function ClientProfile() {
     getClientById, getShiftsByClient, getInvoicesByClient,
     getCarePlanByClient, getDocumentsByClient,
     getCarerById, updateCarePlan, addDocument, deleteDocument,
+    getReviewsByClient, activityReviews,
   } = useStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -442,6 +444,18 @@ export default function ClientProfile() {
                   <p className="text-charcoal">{client.supportCoordinatorName}</p>
                   {client.supportCoordinatorContact && (
                     <p className="text-xs text-mid-gray">{client.supportCoordinatorContact}</p>
+                  )}
+                </div>
+              )}
+              {client.nominatedContactName && (
+                <div>
+                  <p className="text-mid-gray text-xs">Nominated Contact (SMS)</p>
+                  <p className="text-charcoal">{client.nominatedContactName}</p>
+                  {client.nominatedContactRelation && (
+                    <p className="text-xs text-mid-gray">{client.nominatedContactRelation}</p>
+                  )}
+                  {client.nominatedContactPhone && (
+                    <p className="text-xs text-mid-gray">{client.nominatedContactPhone}</p>
                   )}
                 </div>
               )}
@@ -1232,12 +1246,125 @@ export default function ClientProfile() {
     );
   }
 
+  // ── Reviews tab ──
+
+  function renderReviews() {
+    const reviews = getReviewsByClient(id ?? '');
+    const MOOD_LABELS: Record<string, { label: string; emoji: string }> = {
+      great: { label: 'Great', emoji: '\uD83D\uDE01' },
+      good: { label: 'Good', emoji: '\uD83D\uDE0A' },
+      okay: { label: 'Okay', emoji: '\uD83D\uDE10' },
+      not_great: { label: 'Not Great', emoji: '\uD83D\uDE1F' },
+      bad: { label: 'Bad', emoji: '\uD83D\uDE1E' },
+    };
+
+    const avgActivity = reviews.length > 0
+      ? (reviews.reduce((s, r) => s + r.activityRating, 0) / reviews.length).toFixed(1)
+      : '-';
+    const avgCarer = reviews.length > 0
+      ? (reviews.reduce((s, r) => s + r.carerRating, 0) / reviews.length).toFixed(1)
+      : '-';
+
+    const moodCounts = reviews.reduce((acc, r) => {
+      acc[r.mood] = (acc[r.mood] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+
+    const topMood = Object.entries(moodCounts).sort((a, b) => b[1] - a[1])[0];
+
+    return (
+      <div className="space-y-6">
+        {/* Summary cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+          <div className="card p-4 text-center">
+            <p className="text-xs text-mid-gray uppercase tracking-wider">Total Reviews</p>
+            <p className="text-2xl font-bold text-charcoal mt-1">{reviews.length}</p>
+          </div>
+          <div className="card p-4 text-center">
+            <p className="text-xs text-mid-gray uppercase tracking-wider">Avg Activity Rating</p>
+            <p className="text-2xl font-bold text-amber-600 mt-1">{avgActivity}/5</p>
+          </div>
+          <div className="card p-4 text-center">
+            <p className="text-xs text-mid-gray uppercase tracking-wider">Avg Carer Rating</p>
+            <p className="text-2xl font-bold text-forest mt-1">{avgCarer}/5</p>
+          </div>
+          <div className="card p-4 text-center">
+            <p className="text-xs text-mid-gray uppercase tracking-wider">Most Common Mood</p>
+            <p className="text-2xl font-bold text-charcoal mt-1">
+              {topMood ? `${MOOD_LABELS[topMood[0]]?.emoji || ''} ${MOOD_LABELS[topMood[0]]?.label || topMood[0]}` : '-'}
+            </p>
+          </div>
+        </div>
+
+        {/* Reviews list */}
+        {reviews.length === 0 ? (
+          <EmptyState icon={Target} title="No reviews yet" description="Client reviews will appear here once submitted." />
+        ) : (
+          <div className="space-y-3">
+            {reviews
+              .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+              .map((review) => {
+                const shift = shifts.find((s) => s.id === review.shiftId);
+                const carer = getCarerById(review.carerId);
+                const moodInfo = MOOD_LABELS[review.mood] || { label: review.mood, emoji: '' };
+                return (
+                  <div key={review.id} className="card p-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-medium text-charcoal">
+                            {shift?.serviceType || 'Activity'}
+                          </span>
+                          <span className="text-xs text-mid-gray">
+                            {review.createdAt ? formatDate(review.createdAt) : ''}
+                          </span>
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-sage-pale text-forest">
+                            {moodInfo.emoji} {moodInfo.label}
+                          </span>
+                        </div>
+                        <p className="text-xs text-mid-gray mt-0.5">
+                          Carer: {carer ? `${carer.firstName} ${carer.lastName}` : 'Unknown'}
+                        </p>
+                      </div>
+                      <div className="flex gap-4 text-right">
+                        <div>
+                          <p className="text-xs text-mid-gray">Activity</p>
+                          <p className="text-sm font-semibold text-amber-600">{review.activityRating}/5</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-mid-gray">Carer</p>
+                          <p className="text-sm font-semibold text-forest">{review.carerRating}/5</p>
+                        </div>
+                      </div>
+                    </div>
+                    {review.activityFeedback && (
+                      <p className="text-sm text-charcoal mt-2 bg-sage-pale/20 rounded-lg p-2">
+                        <span className="text-xs font-medium text-mid-gray">Activity: </span>
+                        {review.activityFeedback}
+                      </p>
+                    )}
+                    {review.carerFeedback && (
+                      <p className="text-sm text-charcoal mt-1 bg-sage-pale/20 rounded-lg p-2">
+                        <span className="text-xs font-medium text-mid-gray">Carer: </span>
+                        {review.carerFeedback}
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   const tabContent: Record<TabId, () => React.JSX.Element> = {
     overview: renderOverview,
     'care-plan': renderCarePlan,
     shifts: renderShifts,
     invoices: renderInvoices,
     documents: renderDocuments,
+    reviews: renderReviews,
   };
 
   // ── Main render ───────────────────────────────────────────────────────────

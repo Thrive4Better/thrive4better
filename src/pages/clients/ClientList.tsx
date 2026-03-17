@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import toast from 'react-hot-toast';
 import { useStore } from '@/stores/useStore';
+import { useAuth } from '@/contexts/AuthContext';
 import { formatDate, cn } from '@/lib/utils';
 import { exportToCsv } from '@/lib/export-utils';
 import StatusBadge from '@/components/ui/StatusBadge';
@@ -46,6 +47,9 @@ const clientSchema = z.object({
   planManagerPhone: z.string().default(''),
   supportCoordinatorName: z.string().default(''),
   supportCoordinatorContact: z.string().default(''),
+  nominatedContactName: z.string().default(''),
+  nominatedContactPhone: z.string().default(''),
+  nominatedContactRelation: z.string().default(''),
   status: z.enum(['Active', 'Inactive', 'On Hold', 'Archived']).default('Active'),
   notes: z.string().default(''),
 });
@@ -200,7 +204,8 @@ function getSortValue(client: Client, field: SortField): string {
 
 export default function ClientList() {
   const navigate = useNavigate();
-  const { clients, addClient, updateClient, deleteClient } = useStore();
+  const { clients, shifts, addClient, updateClient, deleteClient } = useStore();
+  const { role, carerId } = useAuth();
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('All');
@@ -225,8 +230,18 @@ export default function ClientList() {
 
   // ── Filtering & sorting ─────────────────────────────────────────────────
 
+  // Staff/carers only see clients they have shifts with
+  const visibleClients = useMemo(() => {
+    if (role === 'admin' || role === 'manager') return clients;
+    if (role === 'staff' && carerId) {
+      const assignedClientIds = new Set(shifts.filter((s) => s.carerId === carerId).map((s) => s.clientId));
+      return clients.filter((c) => assignedClientIds.has(c.id));
+    }
+    return clients;
+  }, [clients, shifts, role, carerId]);
+
   const filteredClients = useMemo(() => {
-    let result = [...clients];
+    let result = [...visibleClients];
 
     // Hide archived by default unless toggled or explicitly filtering
     if (!showArchived && statusFilter !== 'Archived') {
@@ -297,6 +312,9 @@ export default function ClientList() {
       planManagerPhone: '',
       supportCoordinatorName: '',
       supportCoordinatorContact: '',
+      nominatedContactName: '',
+      nominatedContactPhone: '',
+      nominatedContactRelation: '',
       status: 'Active' as const,
       notes: '',
     },
@@ -325,6 +343,9 @@ export default function ClientList() {
       planManagerPhone: '',
       supportCoordinatorName: '',
       supportCoordinatorContact: '',
+      nominatedContactName: '',
+      nominatedContactPhone: '',
+      nominatedContactRelation: '',
       status: 'Active',
       notes: '',
     });
@@ -354,6 +375,9 @@ export default function ClientList() {
       planManagerPhone: client.planManagerPhone,
       supportCoordinatorName: client.supportCoordinatorName,
       supportCoordinatorContact: client.supportCoordinatorContact,
+      nominatedContactName: client.nominatedContactName || '',
+      nominatedContactPhone: client.nominatedContactPhone || '',
+      nominatedContactRelation: client.nominatedContactRelation || '',
       status: client.status,
       notes: client.notes,
     });
@@ -972,6 +996,26 @@ export default function ClientList() {
               <div>
                 <label className="text-xs font-medium text-mid-gray mb-1 block">Contact</label>
                 <input {...register('supportCoordinatorContact')} className="input-field w-full" />
+              </div>
+            </div>
+          </fieldset>
+
+          {/* Nominated Contact (SMS Reminders) */}
+          <fieldset>
+            <legend className="text-sm font-semibold text-charcoal mb-3">Nominated Contact (SMS Reminders)</legend>
+            <p className="text-xs text-mid-gray mb-3">This person will receive SMS reminders for appointments and overdue invoices.</p>
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className="text-xs font-medium text-mid-gray mb-1 block">Name</label>
+                <input {...register('nominatedContactName')} className="input-field w-full" placeholder="e.g. Jane Smith" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-mid-gray mb-1 block">Phone</label>
+                <input {...register('nominatedContactPhone')} className="input-field w-full" placeholder="04xx xxx xxx" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-mid-gray mb-1 block">Relation</label>
+                <input {...register('nominatedContactRelation')} className="input-field w-full" placeholder="e.g. Mother, Plan Manager" />
               </div>
             </div>
           </fieldset>

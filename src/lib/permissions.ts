@@ -126,6 +126,10 @@ export const ROLE_DEFAULTS: Record<UserRole, Permission[]> = {
     'incidents.create',
     'incidents.view',
   ],
+  client: [
+    'dashboard.view',
+    'careplans.view',
+  ],
 };
 
 /**

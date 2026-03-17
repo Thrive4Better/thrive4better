@@ -2,18 +2,20 @@ import { useState } from 'react';
 import { useStore } from '@/stores/useStore';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { Building2, Palette, Database, RotateCcw, Lock, User } from 'lucide-react';
+import { Building2, Palette, Database, RotateCcw, Lock, User, Bell } from 'lucide-react';
 import toast from 'react-hot-toast';
+import ReminderSettings from './ReminderSettings';
 // mockData import removed - data reset uses localStorage clear
 
 export default function Settings() {
-  const [activeTab, setActiveTab] = useState<'profile' | 'security' | 'business' | 'display' | 'data'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'security' | 'business' | 'display' | 'reminders' | 'data'>('profile');
 
   const tabs = [
     { id: 'profile' as const, label: 'Profile', icon: User },
     { id: 'security' as const, label: 'Security', icon: Lock },
     { id: 'business' as const, label: 'Business Details', icon: Building2 },
     { id: 'display' as const, label: 'Display', icon: Palette },
+    { id: 'reminders' as const, label: 'Reminders', icon: Bell },
     { id: 'data' as const, label: 'Data Management', icon: Database },
   ];
 
@@ -43,6 +45,7 @@ export default function Settings() {
       {activeTab === 'security' && <SecuritySettings />}
       {activeTab === 'business' && <BusinessSettings />}
       {activeTab === 'display' && <DisplaySettings />}
+      {activeTab === 'reminders' && <ReminderSettings />}
       {activeTab === 'data' && <DataSettings />}
     </div>
   );

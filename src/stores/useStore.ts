@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type {
   Client, Carer, Shift, Invoice, CarePlan, NdisRate, ClientDocument,
   SessionNote, IncidentReport, Timesheet, ComplianceRecord, ClaimSubmission,
+  ActivityReview, ContractorInvoice, RemittanceAdvice,
 } from '@/types';
 import { getNextInvoiceNumber } from '@/lib/utils';
 import * as db from '@/lib/supabase-data';
@@ -20,6 +21,9 @@ interface AppState {
   timesheets: Timesheet[];
   complianceRecords: ComplianceRecord[];
   claimSubmissions: ClaimSubmission[];
+  activityReviews: ActivityReview[];
+  contractorInvoices: ContractorInvoice[];
+  remittanceAdvices: RemittanceAdvice[];
 
   // State
   isInitialized: boolean;
@@ -83,6 +87,23 @@ interface AppState {
   updateClaimSubmission: (id: string, data: Partial<ClaimSubmission>) => Promise<void>;
   deleteClaimSubmission: (id: string) => Promise<void>;
 
+  // Activity reviews
+  addActivityReview: (review: Omit<ActivityReview, 'id' | 'createdAt'>) => Promise<ActivityReview>;
+  updateActivityReview: (id: string, data: Partial<ActivityReview>) => Promise<void>;
+  deleteActivityReview: (id: string) => Promise<void>;
+
+  // Contractor invoices (localStorage-backed)
+  addContractorInvoice: (invoice: ContractorInvoice) => void;
+  updateContractorInvoice: (id: string, data: Partial<ContractorInvoice>) => void;
+  deleteContractorInvoice: (id: string) => void;
+  getContractorInvoicesByCarer: (carerId: string) => ContractorInvoice[];
+
+  // Remittance advices (localStorage-backed)
+  addRemittanceAdvice: (advice: RemittanceAdvice) => void;
+  updateRemittanceAdvice: (id: string, data: Partial<RemittanceAdvice>) => void;
+  deleteRemittanceAdvice: (id: string) => void;
+  getRemittanceAdvicesByCarer: (carerId: string) => RemittanceAdvice[];
+
   // Helpers
   getClientById: (id: string) => Client | undefined;
   getCarerById: (id: string) => Carer | undefined;
@@ -97,6 +118,8 @@ interface AppState {
   getComplianceRecordsByCarer: (carerId: string) => ComplianceRecord[];
   getClaimsByInvoice: (invoiceId: string) => ClaimSubmission[];
   getIncidentsByClient: (clientId: string) => IncidentReport[];
+  getReviewsByClient: (clientId: string) => ActivityReview[];
+  getReviewsByCarer: (carerId: string) => ActivityReview[];
 }
 
 export const useStore = create<AppState>()((set, get) => ({
@@ -112,6 +135,9 @@ export const useStore = create<AppState>()((set, get) => ({
   timesheets: [],
   complianceRecords: [],
   claimSubmissions: [],
+  activityReviews: [],
+  contractorInvoices: JSON.parse(localStorage.getItem('t4b_contractor_invoices') || '[]') as ContractorInvoice[],
+  remittanceAdvices: JSON.parse(localStorage.getItem('t4b_remittance_advices') || '[]') as RemittanceAdvice[],
   isInitialized: false,
   isLoading: false,
 
@@ -300,6 +326,69 @@ export const useStore = create<AppState>()((set, get) => ({
     set((s) => ({ claimSubmissions: s.claimSubmissions.filter((c) => c.id !== id) }));
   },
 
+  // ── Activity Reviews ──
+  addActivityReview: async (review) => {
+    const n = await db.insertActivityReview(review);
+    set((s) => ({ activityReviews: [...s.activityReviews, n] }));
+    return n;
+  },
+  updateActivityReview: async (id, data) => {
+    const u = await db.updateActivityReview(id, data);
+    set((s) => ({ activityReviews: s.activityReviews.map((r) => (r.id === id ? u : r)) }));
+  },
+  deleteActivityReview: async (id) => {
+    await db.deleteActivityReview(id);
+    set((s) => ({ activityReviews: s.activityReviews.filter((r) => r.id !== id) }));
+  },
+
+  // ── Contractor Invoices (localStorage) ──
+  addContractorInvoice: (invoice) => {
+    set((s) => {
+      const updated = [...s.contractorInvoices, invoice];
+      localStorage.setItem('t4b_contractor_invoices', JSON.stringify(updated));
+      return { contractorInvoices: updated };
+    });
+  },
+  updateContractorInvoice: (id, data) => {
+    set((s) => {
+      const updated = s.contractorInvoices.map((i) => (i.id === id ? { ...i, ...data } : i));
+      localStorage.setItem('t4b_contractor_invoices', JSON.stringify(updated));
+      return { contractorInvoices: updated };
+    });
+  },
+  deleteContractorInvoice: (id) => {
+    set((s) => {
+      const updated = s.contractorInvoices.filter((i) => i.id !== id);
+      localStorage.setItem('t4b_contractor_invoices', JSON.stringify(updated));
+      return { contractorInvoices: updated };
+    });
+  },
+  getContractorInvoicesByCarer: (carerId) => get().contractorInvoices.filter((i) => i.carerId === carerId),
+
+  // ── Remittance Advices (localStorage) ──
+  addRemittanceAdvice: (advice) => {
+    set((s) => {
+      const updated = [...s.remittanceAdvices, advice];
+      localStorage.setItem('t4b_remittance_advices', JSON.stringify(updated));
+      return { remittanceAdvices: updated };
+    });
+  },
+  updateRemittanceAdvice: (id, data) => {
+    set((s) => {
+      const updated = s.remittanceAdvices.map((a) => (a.id === id ? { ...a, ...data } : a));
+      localStorage.setItem('t4b_remittance_advices', JSON.stringify(updated));
+      return { remittanceAdvices: updated };
+    });
+  },
+  deleteRemittanceAdvice: (id) => {
+    set((s) => {
+      const updated = s.remittanceAdvices.filter((a) => a.id !== id);
+      localStorage.setItem('t4b_remittance_advices', JSON.stringify(updated));
+      return { remittanceAdvices: updated };
+    });
+  },
+  getRemittanceAdvicesByCarer: (carerId) => get().remittanceAdvices.filter((a) => a.carerId === carerId),
+
   // ── Helpers ──
   getClientById: (id) => get().clients.find((c) => c.id === id),
   getCarerById: (id) => get().carers.find((c) => c.id === id),
@@ -314,4 +403,6 @@ export const useStore = create<AppState>()((set, get) => ({
   getComplianceRecordsByCarer: (carerId) => get().complianceRecords.filter((r) => r.carerId === carerId),
   getClaimsByInvoice: (invoiceId) => get().claimSubmissions.filter((c) => c.invoiceId === invoiceId),
   getIncidentsByClient: (clientId) => get().incidentReports.filter((r) => r.clientId === clientId),
+  getReviewsByClient: (clientId) => get().activityReviews.filter((r) => r.clientId === clientId),
+  getReviewsByCarer: (carerId) => get().activityReviews.filter((r) => r.carerId === carerId),
 }));

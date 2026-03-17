@@ -29,6 +29,7 @@ export const DEFAULT_ACCOUNTING_CATEGORIES: AccountingCategory[] = [
   { id: 'cat-rev-capital', name: 'NDIS Revenue - Capital Supports', type: 'revenue', group: 'Revenue', code: 202, taxType: 'GST Free', isDefault: true },
   { id: 'cat-rev-planmgmt', name: 'NDIS Revenue - Plan Management', type: 'revenue', group: 'Revenue', code: 203, taxType: 'GST Free', isDefault: true },
   { id: 'cat-rev-suppcoord', name: 'NDIS Revenue - Support Coordination', type: 'revenue', group: 'Revenue', code: 204, taxType: 'GST Free', isDefault: true },
+  { id: 'cat-rev-vehicle', name: 'Vehicle Reimbursement - Client Travel', type: 'revenue', group: 'Revenue', code: 206, taxType: 'GST Free', isDefault: true },
   { id: 'cat-rev-other', name: 'Other Revenue', type: 'revenue', group: 'Revenue', code: 260, taxType: 'GST on Income', isDefault: true },
   { id: 'cat-rev-interest', name: 'Interest Income', type: 'revenue', group: 'Revenue', code: 270, taxType: 'GST Free', isDefault: true },
 
@@ -49,6 +50,8 @@ export const DEFAULT_ACCOUNTING_CATEGORIES: AccountingCategory[] = [
   { id: 'cat-op-inspl', name: 'Insurance - Public Liability', type: 'expense', group: 'Operating Expenses', code: 520, taxType: 'GST on Expenses', isDefault: true },
   { id: 'cat-op-inspi', name: 'Insurance - Professional Indemnity', type: 'expense', group: 'Operating Expenses', code: 521, taxType: 'GST on Expenses', isDefault: true },
   { id: 'cat-op-vehicle', name: 'Motor Vehicle Expenses', type: 'expense', group: 'Operating Expenses', code: 530, taxType: 'GST on Expenses', isDefault: true },
+  { id: 'cat-op-vehicle-client', name: 'Vehicle Expenses - Client Travel', type: 'expense', group: 'Operating Expenses', code: 531, taxType: 'GST on Expenses', isDefault: true },
+  { id: 'cat-op-vehicle-business', name: 'Vehicle Expenses - Business Use', type: 'expense', group: 'Operating Expenses', code: 532, taxType: 'GST on Expenses', isDefault: true },
   { id: 'cat-op-office', name: 'Office Supplies', type: 'expense', group: 'Operating Expenses', code: 540, taxType: 'GST on Expenses', isDefault: true },
   { id: 'cat-op-marketing', name: 'Marketing & Advertising', type: 'expense', group: 'Operating Expenses', code: 541, taxType: 'GST on Expenses', isDefault: true },
   { id: 'cat-op-acctlegal', name: 'Accounting & Legal Fees', type: 'expense', group: 'Operating Expenses', code: 550, taxType: 'GST on Expenses', isDefault: true },

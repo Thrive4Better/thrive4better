@@ -7,6 +7,10 @@ import Login from '@/pages/auth/Login';
 import AppLayout from '@/components/layout/AppLayout';
 import Dashboard from '@/pages/dashboard/Dashboard';
 import StaffDashboard from '@/pages/dashboard/StaffDashboard';
+import ClientDashboard from '@/pages/dashboard/ClientDashboard';
+import MyProfile from '@/pages/client-portal/MyProfile';
+import RateActivity from '@/pages/client-portal/RateActivity';
+import MyCarePlan from '@/pages/client-portal/MyCarePlan';
 import ClientList from '@/pages/clients/ClientList';
 import ClientProfile from '@/pages/clients/ClientProfile';
 import CarePlans from '@/pages/clients/CarePlans';
@@ -25,10 +29,23 @@ import IdeaGenerator from '@/pages/tools/IdeaGenerator';
 import SupportPlanInfo from '@/pages/tools/SupportPlanInfo';
 import MyShifts from '@/pages/staff/MyShifts';
 import MyTimesheet from '@/pages/staff/MyTimesheet';
+import LogShift from '@/pages/staff/LogShift';
 import UserManagement from '@/pages/admin/UserManagement';
+import DocumentLibrary from '@/pages/documents/DocumentLibrary';
 import Settings from '@/pages/settings/Settings';
 import NotFound from '@/pages/NotFound';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
+
+// Lazy-loaded admin pages
+const Onboarding = lazy(() => import('@/pages/admin/Onboarding'));
+
+// Lazy-loaded payroll pages
+const PayrollDashboard = lazy(() => import('@/pages/payroll/PayrollDashboard'));
+const PayRunPage = lazy(() => import('@/pages/payroll/PayRun'));
+
+// Lazy-loaded contractor invoice pages
+const ContractorInvoicePage = lazy(() => import('@/pages/staff/ContractorInvoice'));
+const ContractorInvoicesAdmin = lazy(() => import('@/pages/invoices/ContractorInvoices'));
 
 // Lazy-loaded accounting pages
 const ChartOfAccounts = lazy(() => import('@/pages/accounting/ChartOfAccounts'));
@@ -41,7 +58,9 @@ const CashFlow = lazy(() => import('@/pages/accounting/CashFlow'));
 
 function DashboardRouter() {
   const { role } = useAuth();
-  return role === 'staff' ? <StaffDashboard /> : <Dashboard />;
+  if (role === 'client') return <ClientDashboard />;
+  if (role === 'staff') return <StaffDashboard />;
+  return <Dashboard />;
 }
 
 export default function App() {
@@ -83,20 +102,34 @@ export default function App() {
               {/* All roles */}
               <Route path="/incidents" element={<IncidentList />} />
               <Route path="/incidents/new" element={<IncidentList />} />
+              <Route path="/documents" element={<DocumentLibrary />} />
               <Route path="/tools/ideas" element={<IdeaGenerator />} />
               <Route path="/tools/idea-generator" element={<IdeaGenerator />} />
               <Route path="/tools/support-plans" element={<SupportPlanInfo />} />
               <Route path="/settings" element={<Settings />} />
 
+              {/* Client portal routes */}
+              <Route element={<ProtectedRoute allowedRoles={['client']} />}>
+                <Route path="/my-profile" element={<MyProfile />} />
+                <Route path="/rate-activities" element={<RateActivity />} />
+                <Route path="/my-care-plan" element={<MyCarePlan />} />
+              </Route>
+
               {/* Staff-only routes */}
               <Route element={<ProtectedRoute allowedRoles={['staff']} />}>
                 <Route path="/my-shifts" element={<MyShifts />} />
                 <Route path="/my-timesheet" element={<MyTimesheet />} />
+                <Route path="/log-shift" element={<LogShift />} />
+                <Route path="/contractor-invoice" element={<Suspense fallback={<LoadingSpinner />}><ContractorInvoicePage /></Suspense>} />
               </Route>
 
               {/* Admin/Manager routes */}
               <Route element={<ProtectedRoute allowedRoles={['admin', 'manager']} />}>
                 <Route path="/roster/timesheets" element={<Timesheets />} />
+                <Route path="/contractor-invoices" element={<Suspense fallback={<LoadingSpinner />}><ContractorInvoicesAdmin /></Suspense>} />
+                <Route path="/payroll" element={<Suspense fallback={<LoadingSpinner />}><PayrollDashboard /></Suspense>} />
+                <Route path="/payroll/new" element={<Suspense fallback={<LoadingSpinner />}><PayRunPage /></Suspense>} />
+                <Route path="/payroll/:id" element={<Suspense fallback={<LoadingSpinner />}><PayRunPage /></Suspense>} />
                 <Route path="/compliance" element={<ComplianceTracker />} />
                 <Route path="/invoices/claims" element={<ClaimTracker />} />
                 <Route path="/reports" element={<Reports />} />
@@ -112,6 +145,7 @@ export default function App() {
               {/* Admin-only routes */}
               <Route element={<ProtectedRoute allowedRoles={['admin']} />}>
                 <Route path="/admin/users" element={<UserManagement />} />
+                <Route path="/admin/onboarding" element={<Suspense fallback={<LoadingSpinner />}><Onboarding /></Suspense>} />
               </Route>
 
               {/* 404 catch-all */}

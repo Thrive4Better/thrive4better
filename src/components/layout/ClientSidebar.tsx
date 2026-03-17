@@ -1,48 +1,32 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import {
-  Clock,
-  Timer,
-  AlertTriangle,
-  Sparkles,
+  LayoutDashboard,
+  User,
+  Star,
+  ClipboardList,
   Settings,
   X,
-  ClipboardEdit,
-  FolderOpen,
-  FileText,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 
-interface StaffSidebarProps {
+interface ClientSidebarProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
 const navSections = [
   {
-    label: 'MY WORK',
+    label: 'MY PORTAL',
     items: [
-      { to: '/my-shifts', icon: Clock, label: 'My Shifts' },
-      { to: '/my-timesheet', icon: Timer, label: 'My Timesheet' },
-      { to: '/log-shift', icon: ClipboardEdit, label: 'Log Shift' },
-      { to: '/contractor-invoice', icon: FileText, label: 'My Invoices' },
-    ],
-  },
-  {
-    label: 'DOCUMENTS',
-    items: [
-      { to: '/documents', icon: FolderOpen, label: 'Document Library' },
-    ],
-  },
-  {
-    label: 'TOOLS',
-    items: [
-      { to: '/incidents/new', icon: AlertTriangle, label: 'Report Incident' },
-      { to: '/tools/ideas', icon: Sparkles, label: 'Idea Generator' },
+      { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+      { to: '/my-profile', icon: User, label: 'My Profile' },
+      { to: '/rate-activities', icon: Star, label: 'Rate Activities' },
+      { to: '/my-care-plan', icon: ClipboardList, label: 'My Care Plan' },
     ],
   },
 ];
 
-export default function StaffSidebar({ isOpen, onClose }: StaffSidebarProps) {
+export default function ClientSidebar({ isOpen, onClose }: ClientSidebarProps) {
   const location = useLocation();
   const { user, profile } = useAuth();
 
@@ -54,6 +38,7 @@ export default function StaffSidebar({ isOpen, onClose }: StaffSidebarProps) {
     .join('');
 
   const isActive = (path: string) => {
+    if (path === '/dashboard') return location.pathname === '/dashboard' || location.pathname === '/';
     return location.pathname === path || location.pathname.startsWith(path + '/');
   };
 
@@ -73,7 +58,7 @@ export default function StaffSidebar({ isOpen, onClose }: StaffSidebarProps) {
             </div>
             <div>
               <h1 className="text-base font-semibold text-charcoal leading-tight">Thrive 4 Better</h1>
-              <p className="text-[11px] text-mid-gray leading-tight">NDIS Support Services</p>
+              <p className="text-[11px] text-mid-gray leading-tight">Client Portal</p>
             </div>
           </div>
           <button
@@ -90,9 +75,12 @@ export default function StaffSidebar({ isOpen, onClose }: StaffSidebarProps) {
       <nav className="flex-1 overflow-y-auto py-4 px-3">
         {navSections.map((section) => (
           <div key={section.label} className="mb-5">
-            <p className="px-3 mb-1.5 text-[10px] font-semibold text-mid-gray tracking-widest uppercase">
-              {section.label}
-            </p>
+            <div className="flex items-center gap-2 px-3 mb-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-forest flex-shrink-0" />
+              <p className="text-[10px] font-semibold text-forest tracking-widest uppercase">
+                {section.label}
+              </p>
+            </div>
             {section.items.map((item) => {
               const Icon = item.icon;
               const active = isActive(item.to);

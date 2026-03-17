@@ -32,6 +32,8 @@ import {
   fromClaimSubmission,
   toUserInvitation,
   toUserProfile,
+  toActivityReview,
+  fromActivityReview,
 } from '@/lib/mappers';
 import type {
   Client,
@@ -48,6 +50,7 @@ import type {
   ClaimSubmission,
   UserInvitation,
   UserProfile,
+  ActivityReview,
 } from '@/types';
 
 // ---------------------------------------------------------------------------
@@ -737,6 +740,38 @@ export async function deleteClaimSubmission(id: string): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Activity Reviews
+// ---------------------------------------------------------------------------
+
+export async function fetchActivityReviews(): Promise<ActivityReview[]> {
+  const { data, error } = await supabase.from('activity_reviews').select('*');
+  if (error) throw new Error(`Failed to fetch activity reviews: ${error.message}`);
+  return (data ?? []).map(toActivityReview);
+}
+
+export async function insertActivityReview(
+  review: Omit<ActivityReview, 'id' | 'createdAt'>,
+): Promise<ActivityReview> {
+  const row = fromActivityReview(review);
+  const { data, error } = await supabase.from('activity_reviews').insert(row).select().single();
+  if (error) throw new Error(`Failed to insert activity review: ${error.message}`);
+  return toActivityReview(data);
+}
+
+export async function updateActivityReview(id: string, data: Partial<ActivityReview>): Promise<ActivityReview> {
+  const row = fromActivityReview({ id, ...data } as ActivityReview);
+  delete row.id;
+  const { data: updated, error } = await supabase.from('activity_reviews').update(row).eq('id', id).select().single();
+  if (error) throw new Error(`Failed to update activity review: ${error.message}`);
+  return toActivityReview(updated);
+}
+
+export async function deleteActivityReview(id: string): Promise<void> {
+  const { error } = await supabase.from('activity_reviews').delete().eq('id', id);
+  if (error) throw new Error(`Failed to delete activity review: ${error.message}`);
+}
+
+// ---------------------------------------------------------------------------
 // User Profiles & Invitations
 // ---------------------------------------------------------------------------
 
@@ -774,6 +809,7 @@ export async function fetchAllData(): Promise<{
   timesheets: Timesheet[];
   complianceRecords: ComplianceRecord[];
   claimSubmissions: ClaimSubmission[];
+  activityReviews: ActivityReview[];
 }> {
   console.log('[Store] Fetching all data...');
 
@@ -811,6 +847,7 @@ export async function fetchAllData(): Promise<{
   const [
     clients, carers, shifts, invoices, carePlans, ndisRates, documents,
     sessionNotes, incidentReports, timesheets, complianceRecords, claimSubmissions,
+    activityReviews,
   ] = await Promise.all([
     safelyFetch('clients', fetchClients),
     safelyFetch('carers', fetchCarers),
@@ -824,11 +861,13 @@ export async function fetchAllData(): Promise<{
     safelyFetch('timesheets', fetchTimesheets),
     safelyFetch('complianceRecords', fetchComplianceRecords),
     safelyFetch('claimSubmissions', fetchClaimSubmissions),
+    safelyFetch('activityReviews', fetchActivityReviews),
   ]);
 
   console.log('[Store] All data loaded');
   return {
     clients, carers, shifts, invoices, carePlans, ndisRates, documents,
     sessionNotes, incidentReports, timesheets, complianceRecords, claimSubmissions,
+    activityReviews,
   };
 }

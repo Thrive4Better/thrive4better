@@ -183,11 +183,40 @@ function ImportFromRosterModal({ open, onClose, shifts, getClientById, onImport 
   );
 }
 
+// ── Parsed data from AI NL input ──
+interface ParsedInvoiceData {
+  clientName: string | null;
+  serviceType: string | null;
+  date: string | null;
+  startTime: string | null;
+  endTime: string | null;
+  hours: number | null;
+  description: string | null;
+  supportCategory: string | null;
+  confidence: number;
+}
+
 // ── Main InvoiceBuilder ──
-export default function InvoiceBuilder() {
+interface InvoiceBuilderProps {
+  modalMode?: boolean;
+  editId?: string;
+  onClose?: () => void;
+  initialParsedData?: ParsedInvoiceData | null;
+}
+
+export default function InvoiceBuilder({ modalMode, editId: editIdProp, onClose, initialParsedData }: InvoiceBuilderProps = {}) {
   const navigate = useNavigate();
-  const { id } = useParams<{ id: string }>();
+  const { id: routeId } = useParams<{ id: string }>();
+  const id = modalMode ? editIdProp : routeId;
   const isEditing = Boolean(id);
+
+  const handleGoBack = () => {
+    if (modalMode && onClose) {
+      onClose();
+    } else {
+      navigate('/invoices');
+    }
+  };
 
   const {
     invoices,
@@ -226,6 +255,49 @@ export default function InvoiceBuilder() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+
+  // ── Apply AI-parsed data ──
+  useEffect(() => {
+    if (!initialParsedData || isEditing) return;
+
+    // Fuzzy match client name
+    if (initialParsedData.clientName) {
+      const searchName = initialParsedData.clientName.toLowerCase();
+      const matchedClient = clients.find((c) => {
+        const fullName = `${c.firstName} ${c.lastName}`.toLowerCase();
+        const firstOnly = c.firstName.toLowerCase();
+        const lastOnly = c.lastName.toLowerCase();
+        return fullName.includes(searchName) || searchName.includes(fullName) ||
+               firstOnly.includes(searchName) || searchName.includes(firstOnly) ||
+               lastOnly.includes(searchName) || searchName.includes(lastOnly);
+      });
+      if (matchedClient) {
+        setClientId(matchedClient.id);
+      }
+    }
+
+    // Set date as period start/end (same day for single-day entry)
+    if (initialParsedData.date) {
+      setPeriodStart(initialParsedData.date);
+      setPeriodEnd(initialParsedData.date);
+    }
+
+    // Create a line item from parsed data
+    if (initialParsedData.serviceType || initialParsedData.description || initialParsedData.hours) {
+      const newItem: InvoiceLineItem = {
+        id: generateId(),
+        date: initialParsedData.date || '',
+        description: initialParsedData.description || initialParsedData.serviceType || '',
+        ndisLineItemCode: '',
+        supportCategory: initialParsedData.supportCategory || '',
+        hours: initialParsedData.hours || 0,
+        rate: 0,
+        amount: 0,
+        accountingCategoryId: '',
+      };
+      setLineItems([newItem]);
+    }
+  }, [initialParsedData]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Accounting categories for revenue classification
   const acctCategories = useMemo(() => loadAccountingCategories(), []);
@@ -452,31 +524,38 @@ export default function InvoiceBuilder() {
     if (isEditing && existingInvoice) {
       await updateInvoice(existingInvoice.id, invoiceData);
       toast.success('Invoice updated');
+      if (modalMode && onClose) onClose();
     } else {
       const newInvoice = await addInvoice(invoiceData);
       toast.success(`Invoice ${newInvoice.invoiceNumber} created`);
-      navigate(`/invoices/${newInvoice.id}/edit`, { replace: true });
+      if (modalMode && onClose) {
+        onClose();
+      } else {
+        navigate(`/invoices/${newInvoice.id}/edit`, { replace: true });
+      }
     }
   };
 
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <button onClick={() => navigate('/invoices')} className="p-2 hover:bg-sage-pale rounded-lg transition-colors">
-            <ArrowLeft size={18} className="text-mid-gray" />
-          </button>
-          <div>
-            <h1 className="text-2xl font-bold text-charcoal">
-              {isEditing ? `Edit Invoice ${invoiceNumber}` : 'New Invoice'}
-            </h1>
-            <p className="text-sm text-mid-gray">
-              {isEditing ? 'Update invoice details' : 'Create a new NDIS invoice'}
-            </p>
+      {!modalMode && (
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button onClick={handleGoBack} className="p-2 hover:bg-sage-pale rounded-lg transition-colors">
+              <ArrowLeft size={18} className="text-mid-gray" />
+            </button>
+            <div>
+              <h1 className="text-2xl font-bold text-charcoal">
+                {isEditing ? `Edit Invoice ${invoiceNumber}` : 'New Invoice'}
+              </h1>
+              <p className="text-sm text-mid-gray">
+                {isEditing ? 'Update invoice details' : 'Create a new NDIS invoice'}
+              </p>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       <div className="flex gap-6">
         {/* ── LEFT PANEL (60%) ── */}

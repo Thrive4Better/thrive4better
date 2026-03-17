@@ -11,6 +11,7 @@ import {
   AlertTriangle,
   Calendar,
   ClipboardList,
+  Star,
 } from 'lucide-react';
 import {
   isToday,
@@ -24,7 +25,7 @@ import {
 export default function StaffDashboard() {
   const navigate = useNavigate();
   const { profile, carerId } = useAuth();
-  const { shifts, sessionNotes, timesheets, clients } = useStore();
+  const { shifts, sessionNotes, timesheets, clients, activityReviews } = useStore();
   const getShiftsByCarer = useStore((s) => s.getShiftsByCarer);
   const getTimesheetsByCarer = useStore((s) => s.getTimesheetsByCarer);
 
@@ -234,6 +235,46 @@ export default function StaffDashboard() {
           )}
         </div>
       </div>
+
+      {/* Client Activity Feedback (activity ratings only, NOT carer ratings) */}
+      {carerId && (() => {
+        const myReviews = activityReviews
+          .filter((r) => r.carerId === carerId)
+          .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+          .slice(0, 5);
+        if (myReviews.length === 0) return null;
+        return (
+          <div className="card">
+            <h3 className="text-sm font-semibold text-charcoal mb-4 flex items-center gap-2">
+              <Star size={16} className="text-amber-500" />
+              Client Activity Feedback
+            </h3>
+            <p className="text-xs text-mid-gray mb-3">See how clients rated activities (to help suggest better ones)</p>
+            <div className="space-y-2">
+              {myReviews.map((review) => {
+                const shift = shifts.find((s) => s.id === review.shiftId);
+                return (
+                  <div key={review.id} className="flex items-center justify-between py-2 px-3 rounded-lg bg-sage-pale/30">
+                    <div>
+                      <p className="text-sm font-medium text-charcoal">
+                        {shift?.serviceType || 'Activity'} - {getClientName(review.clientId)}
+                      </p>
+                      <p className="text-xs text-mid-gray">{formatDate(review.createdAt)}</p>
+                      {review.activityFeedback && (
+                        <p className="text-xs text-mid-gray mt-0.5 italic">"{review.activityFeedback}"</p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Star size={14} className="text-amber-400 fill-amber-400" />
+                      <span className="text-sm font-semibold text-charcoal">{review.activityRating}/5</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

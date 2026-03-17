@@ -77,6 +77,7 @@ const carerSchema = z.object({
   qualifications: z.array(z.string()),
   availability: z.array(z.string()),
   status: z.enum(CARER_STATUSES),
+  isSubcontractor: z.boolean(),
   notes: z.string(),
 });
 
@@ -305,6 +306,7 @@ export default function CarersList() {
           qualifications: [],
           availability: [],
           status: (row.status as 'Active' | 'Unavailable' | 'On Leave') || 'Active',
+          isSubcontractor: false,
           notes: '',
         });
         imported++;
@@ -640,6 +642,7 @@ function CarerForm({ carer, onSave, onDelete, onCancel }: CarerFormProps) {
           qualifications: carer.qualifications,
           availability: carer.availability,
           status: carer.status,
+          isSubcontractor: carer.isSubcontractor || false,
           notes: carer.notes,
         }
       : {
@@ -651,6 +654,7 @@ function CarerForm({ carer, onSave, onDelete, onCancel }: CarerFormProps) {
           qualifications: [],
           availability: [],
           status: 'Active',
+          isSubcontractor: false,
           notes: '',
         },
   });
@@ -698,6 +702,7 @@ function CarerForm({ carer, onSave, onDelete, onCancel }: CarerFormProps) {
       qualifications: data.qualifications,
       availability: data.availability,
       status: data.status,
+      isSubcontractor: data.isSubcontractor,
       notes: data.notes,
     });
   };
@@ -755,6 +760,21 @@ function CarerForm({ carer, onSave, onDelete, onCancel }: CarerFormProps) {
         {errors.role && (
           <p className="text-sm text-red-600 mt-1">{errors.role.message}</p>
         )}
+      </div>
+
+      {/* Subcontractor Flag */}
+      <div>
+        <label className="flex items-center gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            {...register('isSubcontractor')}
+            className="rounded border-sage text-forest focus:ring-forest w-4 h-4"
+          />
+          <div>
+            <span className="text-sm font-medium text-charcoal">Subcontractor</span>
+            <p className="text-xs text-mid-gray">Subcontractors don't receive PAYG or super in payroll -- they invoice separately.</p>
+          </div>
+        </label>
       </div>
 
       {/* Qualifications */}
