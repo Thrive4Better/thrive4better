@@ -55,13 +55,78 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { userId, action, role, permissions } = req.body;
+    const { userId, action, role, permissions, email, password, fullName, phone, carerId } = req.body;
 
-    if (!userId || !action) {
-      return res.status(400).json({ error: 'Missing required fields: userId, action' });
+    if (!action) {
+      return res.status(400).json({ error: 'Missing required field: action' });
+    }
+
+    // createUser doesn't need userId (it creates a new one)
+    if (action !== 'createUser' && !userId) {
+      return res.status(400).json({ error: 'Missing required field: userId' });
     }
 
     switch (action) {
+      case 'createUser': {
+        if (!email || !password || !fullName) {
+          return res.status(400).json({ error: 'Missing required fields: email, password, fullName' });
+        }
+
+        // Create user in Supabase Auth
+        const { data: newUser, error: createErr } = await supabase.auth.admin.createUser({
+          email,
+          password,
+          email_confirm: true, // Auto-confirm so they can log in immediately
+          user_metadata: { full_name: fullName },
+        });
+
+        if (createErr) {
+          console.error('Failed to create user:', createErr);
+          return res.status(500).json({ error: 'Failed to create user', details: createErr.message });
+        }
+
+        if (!newUser?.user) {
+          return res.status(500).json({ error: 'User creation returned no user object' });
+        }
+
+        const newUserId = newUser.user.id;
+
+        // The handle_new_user trigger auto-creates the profile row.
+        // Now update it with role, permissions, carer_id, phone.
+        const profileUpdate: Record<string, unknown> = {
+          full_name: fullName,
+          role: role || 'guest',
+          phone: phone || null,
+          carer_id: carerId || null,
+          is_active: true,
+        };
+        if (Array.isArray(permissions)) {
+          profileUpdate.permissions = permissions;
+        }
+
+        const { error: profileErr } = await supabase
+          .from('profiles')
+          .update(profileUpdate)
+          .eq('id', newUserId);
+
+        if (profileErr) {
+          console.error('Failed to update profile after creation:', profileErr);
+          // User was created in auth but profile update failed - still return the user
+          return res.status(200).json({
+            success: true,
+            message: 'User created but profile update failed - update manually',
+            userId: newUserId,
+            profileError: profileErr.message,
+          });
+        }
+
+        return res.status(200).json({
+          success: true,
+          message: 'User created successfully',
+          userId: newUserId,
+        });
+      }
+
       case 'activate': {
         // Unban user in auth
         const { error: authErr } = await supabase.auth.admin.updateUserById(userId, {
@@ -114,7 +179,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       case 'updateRole': {
-        if (!role || !['admin', 'manager', 'staff'].includes(role)) {
+        if (!role || !['admin', 'manager', 'staff', 'client', 'guest'].includes(role)) {
           return res.status(400).json({ error: 'Invalid role' });
         }
 
