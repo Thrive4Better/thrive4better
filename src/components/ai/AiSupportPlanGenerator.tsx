@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase';
 import SlideOver from '@/components/ui/SlideOver';
 import { Sparkles, Check, X, Loader2, AlertCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
+import type { CarePlanSectionType } from '@/types';
 
 // ── Types ──
 
@@ -25,6 +26,40 @@ interface AiSupportPlanGeneratorProps {
   clientId: string;
   onClose: () => void;
   onApply: (planData: GeneratedPlan) => void;
+}
+
+// ── Section generation helper (exported for use in modular care plan) ──
+
+export async function generateSectionContent(
+  clientId: string,
+  sectionType: CarePlanSectionType,
+  existingSectionsContext?: string,
+): Promise<string> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) {
+    throw new Error('Not authenticated. Please log in again.');
+  }
+
+  const response = await fetch('/api/generate-support-plan', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${session.access_token}`,
+    },
+    body: JSON.stringify({
+      clientId,
+      sectionType,
+      existingSectionsContext,
+    }),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.error || 'Failed to generate section content');
+  }
+
+  return data.sectionContent;
 }
 
 // ── Component ──

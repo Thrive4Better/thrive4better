@@ -4,17 +4,62 @@ import { useStore } from '@/stores/useStore';
 import { formatDate, formatTime, formatCurrency, cn, getServiceTypeColor, generateId } from '@/lib/utils';
 import StatusBadge from '@/components/ui/StatusBadge';
 import EmptyState from '@/components/ui/EmptyState';
-import AiSupportPlanGenerator from '@/components/ai/AiSupportPlanGenerator';
+import AiSupportPlanGenerator, { generateSectionContent } from '@/components/ai/AiSupportPlanGenerator';
+import ConfirmModal from '@/components/ui/ConfirmModal';
 import {
   ArrowLeft, User, CreditCard, Target, Calendar, FileText, FolderOpen,
   Phone, Mail, MapPin, Shield, Heart, AlertTriangle, Stethoscope,
   Clock, Download, Upload, File, FileImage, FileSpreadsheet,
-  Edit2, Save, X, ChevronRight, Trash2, Sparkles,
+  Edit2, Save, X, ChevronRight, Trash2, Sparkles, Plus,
+  ChevronUp, ChevronDown, Loader2, FileCode, FileType,
 } from 'lucide-react';
-import type { CarePlan, CarePlanGoal, AlliedHealthContact, Shift } from '@/types';
+import type { CarePlan, CarePlanGoal, AlliedHealthContact, Shift, CarePlanSection, CarePlanSectionType, ModularCarePlan } from '@/types';
 import { format, parseISO, isWithinInterval } from 'date-fns';
 import { supabase } from '@/lib/supabase';
 import toast from 'react-hot-toast';
+import { pdf } from '@react-pdf/renderer';
+import CarePlanPdf from './CarePlanPdf';
+import { downloadXml, downloadDocx } from '@/lib/care-plan-export';
+
+// ── Section type config ──
+
+const SECTION_TYPE_OPTIONS: { value: CarePlanSectionType; label: string }[] = [
+  { value: 'participant_details', label: 'Participant Details' },
+  { value: 'plan_overview', label: 'Plan Overview' },
+  { value: 'support_needs', label: 'Support Needs' },
+  { value: 'goals_and_outcomes', label: 'Goals & Outcomes' },
+  { value: 'risk_assessment', label: 'Risk Assessment' },
+  { value: 'communication_plan', label: 'Communication Plan' },
+  { value: 'daily_routine', label: 'Daily Routine' },
+  { value: 'medication_management', label: 'Medication Management' },
+  { value: 'behaviour_support', label: 'Behaviour Support' },
+  { value: 'cultural_considerations', label: 'Cultural Considerations' },
+  { value: 'emergency_contacts', label: 'Emergency Contacts' },
+  { value: 'review_schedule', label: 'Review Schedule' },
+  { value: 'custom', label: 'Custom Section' },
+];
+
+function getSectionTitle(type: CarePlanSectionType): string {
+  return SECTION_TYPE_OPTIONS.find((o) => o.value === type)?.label || 'Custom Section';
+}
+
+function getDefaultSectionContent(type: CarePlanSectionType): string {
+  const defaults: Partial<Record<CarePlanSectionType, string>> = {
+    participant_details: 'Enter participant details including relevant background information, preferences, and important contacts.',
+    plan_overview: 'Provide an overview of this care plan including its purpose, scope, and key objectives.',
+    support_needs: 'Describe the participant\'s support needs, including daily living, community access, and any specialist support requirements.',
+    goals_and_outcomes: 'List the participant\'s goals and desired outcomes. Include measurable targets and timeframes.',
+    risk_assessment: 'Document identified risks, their likelihood and impact, and the mitigation strategies in place.',
+    communication_plan: 'Describe the participant\'s communication preferences, needs, and strategies for effective communication.',
+    daily_routine: 'Outline the participant\'s preferred daily routine, including morning, afternoon, and evening activities.',
+    medication_management: 'Document current medications, dosages, administration schedules, and any special instructions.',
+    behaviour_support: 'Describe any behaviour support strategies, triggers, de-escalation techniques, and positive behaviour support plans.',
+    cultural_considerations: 'Document cultural, religious, or spiritual considerations important to the participant\'s care.',
+    emergency_contacts: 'List emergency contacts, their relationship to the participant, and contact details.',
+    review_schedule: 'Outline the schedule for care plan reviews, including dates and responsible parties.',
+  };
+  return defaults[type] || '';
+}
 
 // ── Tab types ───────────────────────────────────────────────────────────────
 
@@ -78,10 +123,106 @@ export default function ClientProfile() {
   const [shiftDateFrom, setShiftDateFrom] = useState('');
   const [shiftDateTo, setShiftDateTo] = useState('');
 
-  // Care plan editing
+  // Care plan editing (legacy)
   const [editingCarePlan, setEditingCarePlan] = useState(false);
   const [editedPlan, setEditedPlan] = useState<Partial<CarePlan>>({});
   const [showAiGenerator, setShowAiGenerator] = useState(false);
+
+  // Modular sections state
+  const [sections, setSections] = useState<CarePlanSection[]>([]);
+  const [sectionsInitialized, setSectionsInitialized] = useState(false);
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
+  const [generatingSection, setGeneratingSection] = useState<string | null>(null);
+  const [showAddSection, setShowAddSection] = useState(false);
+  const [deletingSectionId, setDeletingSectionId] = useState<string | null>(null);
+  const [exportingPdf, setExportingPdf] = useState(false);
+
+  // Initialize sections from care plan or localStorage
+  useEffect(() => {
+    if (!carePlan || sectionsInitialized) return;
+
+    // Try loading from localStorage first
+    const stored = localStorage.getItem(`care-plan-sections-${carePlan.id}`);
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored) as CarePlanSection[];
+        setSections(parsed);
+        setSectionsInitialized(true);
+        return;
+      } catch {
+        // Ignore parse errors, fall through to migration
+      }
+    }
+
+    // Migrate existing care plan data into sections
+    const migrated: CarePlanSection[] = [];
+    let order = 0;
+    const now = carePlan.updatedAt || new Date().toISOString();
+
+    if (carePlan.supportNeedsSummary) {
+      migrated.push({
+        id: generateId(), type: 'support_needs', title: 'Support Needs',
+        content: carePlan.supportNeedsSummary, order: order++, lastUpdated: now, generatedByAi: false,
+      });
+    }
+    if (carePlan.goals.length > 0) {
+      const goalsContent = carePlan.goals.map((g: CarePlanGoal) =>
+        `- ${g.description} (Target: ${formatDate(g.targetDate)}, Status: ${g.status})`
+      ).join('\n');
+      migrated.push({
+        id: generateId(), type: 'goals_and_outcomes', title: 'Goals & Outcomes',
+        content: goalsContent, order: order++, lastUpdated: now, generatedByAi: false,
+      });
+    }
+    if (carePlan.preferredRoutines) {
+      migrated.push({
+        id: generateId(), type: 'daily_routine', title: 'Daily Routine',
+        content: carePlan.preferredRoutines, order: order++, lastUpdated: now, generatedByAi: false,
+      });
+    }
+    if (carePlan.communicationNeeds) {
+      migrated.push({
+        id: generateId(), type: 'communication_plan', title: 'Communication Plan',
+        content: carePlan.communicationNeeds, order: order++, lastUpdated: now, generatedByAi: false,
+      });
+    }
+    if (carePlan.riskNotes) {
+      migrated.push({
+        id: generateId(), type: 'risk_assessment', title: 'Risk Assessment',
+        content: carePlan.riskNotes, order: order++, lastUpdated: now, generatedByAi: false,
+      });
+    }
+    if (carePlan.medicalInfo) {
+      migrated.push({
+        id: generateId(), type: 'medication_management', title: 'Medication Management',
+        content: carePlan.medicalInfo, order: order++, lastUpdated: now, generatedByAi: false,
+      });
+    }
+
+    // If no existing data, add some default sections
+    if (migrated.length === 0) {
+      const defaultTypes: CarePlanSectionType[] = [
+        'participant_details', 'plan_overview', 'support_needs',
+        'goals_and_outcomes', 'risk_assessment', 'communication_plan', 'daily_routine',
+      ];
+      defaultTypes.forEach((type) => {
+        migrated.push({
+          id: generateId(), type, title: getSectionTitle(type),
+          content: getDefaultSectionContent(type), order: order++,
+          lastUpdated: now, generatedByAi: false,
+        });
+      });
+    }
+
+    setSections(migrated);
+    setSectionsInitialized(true);
+  }, [carePlan, sectionsInitialized]);
+
+  // Save sections to localStorage on change
+  useEffect(() => {
+    if (!carePlan || !sectionsInitialized || sections.length === 0) return;
+    localStorage.setItem(`care-plan-sections-${carePlan.id}`, JSON.stringify(sections));
+  }, [sections, carePlan, sectionsInitialized]);
 
   if (!_client) {
     return (
@@ -379,6 +520,139 @@ export default function ClientProfile() {
     );
   }
 
+  // ── Modular section handlers ──
+
+  function addSection(type: CarePlanSectionType) {
+    const maxOrder = sections.length > 0 ? Math.max(...sections.map((s) => s.order)) : -1;
+    const newSection: CarePlanSection = {
+      id: generateId(),
+      type,
+      title: type === 'custom' ? 'Custom Section' : getSectionTitle(type),
+      content: getDefaultSectionContent(type),
+      order: maxOrder + 1,
+      lastUpdated: new Date().toISOString(),
+      generatedByAi: false,
+    };
+    setSections((prev) => [...prev, newSection]);
+    setShowAddSection(false);
+  }
+
+  function updateSectionContent(sectionId: string, content: string) {
+    setSections((prev) =>
+      prev.map((s) =>
+        s.id === sectionId
+          ? { ...s, content, lastUpdated: new Date().toISOString() }
+          : s,
+      ),
+    );
+  }
+
+  function updateSectionTitle(sectionId: string, title: string) {
+    setSections((prev) =>
+      prev.map((s) =>
+        s.id === sectionId ? { ...s, title, customTitle: title } : s,
+      ),
+    );
+  }
+
+  function deleteSection(sectionId: string) {
+    setSections((prev) => {
+      const filtered = prev.filter((s) => s.id !== sectionId);
+      return filtered.map((s, i) => ({ ...s, order: i }));
+    });
+    setDeletingSectionId(null);
+  }
+
+  function moveSection(sectionId: string, direction: 'up' | 'down') {
+    setSections((prev) => {
+      const sorted = [...prev].sort((a, b) => a.order - b.order);
+      const idx = sorted.findIndex((s) => s.id === sectionId);
+      if (idx < 0) return prev;
+      const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+      if (swapIdx < 0 || swapIdx >= sorted.length) return prev;
+      const temp = sorted[idx].order;
+      sorted[idx] = { ...sorted[idx], order: sorted[swapIdx].order };
+      sorted[swapIdx] = { ...sorted[swapIdx], order: temp };
+      return sorted;
+    });
+  }
+
+  function toggleCollapse(sectionId: string) {
+    setCollapsedSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(sectionId)) next.delete(sectionId);
+      else next.add(sectionId);
+      return next;
+    });
+  }
+
+  async function handleGenerateSection(sectionId: string) {
+    if (!id) return;
+    setGeneratingSection(sectionId);
+    try {
+      const section = sections.find((s) => s.id === sectionId);
+      if (!section) return;
+
+      // Build context from other sections
+      const otherSections = sections
+        .filter((s) => s.id !== sectionId && s.content.length > 20)
+        .sort((a, b) => a.order - b.order)
+        .map((s) => `${s.title}: ${s.content.substring(0, 200)}`)
+        .join('\n');
+
+      const content = await generateSectionContent(id, section.type, otherSections || undefined);
+      setSections((prev) =>
+        prev.map((s) =>
+          s.id === sectionId
+            ? { ...s, content, lastUpdated: new Date().toISOString(), generatedByAi: true }
+            : s,
+        ),
+      );
+      toast.success(`Generated ${section.title}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to generate content');
+    } finally {
+      setGeneratingSection(null);
+    }
+  }
+
+  function getModularPlan(): ModularCarePlan {
+    return {
+      ...(carePlan as CarePlan),
+      sections: [...sections].sort((a, b) => a.order - b.order),
+      templateVersion: '1.0',
+      lastExported: new Date().toISOString(),
+    };
+  }
+
+  async function handleExportPdf() {
+    setExportingPdf(true);
+    try {
+      const modularPlan = getModularPlan();
+      const blob = await pdf(<CarePlanPdf plan={modularPlan} client={client} />).toBlob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `care-plan-${client.firstName}-${client.lastName}.pdf`;
+      link.click();
+      URL.revokeObjectURL(url);
+      toast.success('PDF downloaded');
+    } catch (err) {
+      toast.error('Failed to generate PDF');
+      console.error(err);
+    } finally {
+      setExportingPdf(false);
+    }
+  }
+
+  function handleExportXml() {
+    downloadXml(getModularPlan(), client);
+  }
+
+  function handleExportDocx() {
+    downloadDocx(getModularPlan(), client);
+  }
+
   function renderCarePlan() {
     if (!carePlan) {
       return (
@@ -390,6 +664,8 @@ export default function ClientProfile() {
       );
     }
 
+    const sortedSections = [...sections].sort((a, b) => a.order - b.order);
+
     return (
       <div className="space-y-6">
         {/* Actions bar */}
@@ -397,158 +673,180 @@ export default function ClientProfile() {
           <div className="text-sm text-mid-gray">
             Last reviewed: {formatDate(carePlan.lastReviewedDate)} | Next review due: {formatDate(carePlan.nextReviewDueDate)}
           </div>
-          <div className="flex gap-3">
+          <div className="flex gap-2 flex-wrap">
             <button
               onClick={() => setShowAiGenerator(true)}
-              className="btn-secondary"
+              className="btn-secondary text-sm"
             >
-              <Sparkles size={16} /> Generate with AI
+              <Sparkles size={14} /> Generate Full Plan
             </button>
-            <button className="btn-secondary">
-              <Download size={16} /> Export Care Plan PDF
-            </button>
-            {editingCarePlan ? (
-              <>
-                <button onClick={() => setEditingCarePlan(false)} className="btn-ghost">
-                  <X size={16} /> Cancel
-                </button>
-                <button onClick={saveCarePlan} className="btn-primary">
-                  <Save size={16} /> Save Changes
-                </button>
-              </>
-            ) : (
-              <button onClick={startEditingCarePlan} className="btn-secondary">
-                <Edit2 size={16} /> Edit
+
+            {/* Export dropdown */}
+            <div className="relative group">
+              <button className="btn-secondary text-sm">
+                <Download size={14} /> Export
               </button>
-            )}
+              <div className="absolute right-0 top-full mt-1 bg-white border border-sage-pale rounded-xl shadow-lg py-1 z-20 min-w-[180px] hidden group-hover:block">
+                <button
+                  onClick={handleExportPdf}
+                  disabled={exportingPdf}
+                  className="w-full text-left px-4 py-2 text-sm text-charcoal hover:bg-sage-pale/30 flex items-center gap-2 transition-colors"
+                >
+                  <FileText size={14} className="text-burgundy" />
+                  {exportingPdf ? 'Generating...' : 'Export PDF'}
+                </button>
+                <button
+                  onClick={handleExportDocx}
+                  className="w-full text-left px-4 py-2 text-sm text-charcoal hover:bg-sage-pale/30 flex items-center gap-2 transition-colors"
+                >
+                  <FileType size={14} className="text-blue-600" />
+                  Export Word (.docx)
+                </button>
+                <button
+                  onClick={handleExportXml}
+                  className="w-full text-left px-4 py-2 text-sm text-charcoal hover:bg-sage-pale/30 flex items-center gap-2 transition-colors"
+                >
+                  <FileCode size={14} className="text-forest" />
+                  Export XML
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Goals */}
-        <div className="card">
-          <h3 className="text-sm font-semibold text-charcoal mb-4 flex items-center gap-2">
-            <Target size={16} className="text-forest" /> Goals
-          </h3>
-          {carePlan.goals.length === 0 ? (
-            <p className="text-sm text-mid-gray">No goals defined</p>
-          ) : (
-            <div className="space-y-3">
-              {carePlan.goals.map((goal: CarePlanGoal) => (
-                <div key={goal.id} className="flex items-start gap-3 p-3 bg-sage-pale/30 rounded-xl">
-                  <div className="flex-1">
-                    <p className="text-sm text-charcoal">{goal.description}</p>
-                    <p className="text-xs text-mid-gray mt-1">Target: {formatDate(goal.targetDate)}</p>
+        {/* Modular Sections */}
+        <div className="space-y-4">
+          {sortedSections.map((section, idx) => {
+            const isCollapsed = collapsedSections.has(section.id);
+            const isGenerating = generatingSection === section.id;
+
+            return (
+              <div
+                key={section.id}
+                className="card border border-sage-pale/60 hover:border-sage transition-colors"
+              >
+                {/* Section Header */}
+                <div className="flex items-center justify-between gap-3">
+                  <button
+                    onClick={() => toggleCollapse(section.id)}
+                    className="flex items-center gap-3 flex-1 text-left"
+                  >
+                    <ChevronRight
+                      size={16}
+                      className={cn(
+                        'text-mid-gray transition-transform',
+                        !isCollapsed && 'rotate-90',
+                      )}
+                    />
+                    <div className="flex-1">
+                      {section.type === 'custom' ? (
+                        <input
+                          type="text"
+                          value={section.title}
+                          onChange={(e) => updateSectionTitle(section.id, e.target.value)}
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-sm font-semibold text-charcoal bg-transparent border-none focus:outline-none focus:ring-1 focus:ring-sage rounded px-1 -ml-1 w-full"
+                        />
+                      ) : (
+                        <h3 className="text-sm font-semibold text-charcoal">
+                          {section.title}
+                        </h3>
+                      )}
+                      <p className="text-xs text-mid-gray mt-0.5">
+                        Updated {formatDate(section.lastUpdated)}
+                        {section.generatedByAi && (
+                          <span className="ml-2 text-xs text-forest">
+                            <Sparkles size={10} className="inline mr-0.5" />AI generated
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                  </button>
+
+                  <div className="flex items-center gap-1 shrink-0">
+                    {/* Generate with AI */}
+                    <button
+                      onClick={() => handleGenerateSection(section.id)}
+                      disabled={isGenerating}
+                      className="p-1.5 rounded-lg hover:bg-sage-pale text-mid-gray hover:text-forest transition-colors"
+                      title="Generate with AI"
+                    >
+                      {isGenerating ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : (
+                        <Sparkles size={14} />
+                      )}
+                    </button>
+                    {/* Move up */}
+                    <button
+                      onClick={() => moveSection(section.id, 'up')}
+                      disabled={idx === 0}
+                      className="p-1.5 rounded-lg hover:bg-sage-pale text-mid-gray hover:text-charcoal transition-colors disabled:opacity-30"
+                      title="Move up"
+                    >
+                      <ChevronUp size={14} />
+                    </button>
+                    {/* Move down */}
+                    <button
+                      onClick={() => moveSection(section.id, 'down')}
+                      disabled={idx === sortedSections.length - 1}
+                      className="p-1.5 rounded-lg hover:bg-sage-pale text-mid-gray hover:text-charcoal transition-colors disabled:opacity-30"
+                      title="Move down"
+                    >
+                      <ChevronDown size={14} />
+                    </button>
+                    {/* Delete */}
+                    <button
+                      onClick={() => setDeletingSectionId(section.id)}
+                      className="p-1.5 rounded-lg hover:bg-red-50 text-mid-gray hover:text-burgundy transition-colors"
+                      title="Delete section"
+                    >
+                      <Trash2 size={14} />
+                    </button>
                   </div>
-                  <StatusBadge status={goal.status} />
                 </div>
+
+                {/* Section Content */}
+                {!isCollapsed && (
+                  <div className="mt-4">
+                    <textarea
+                      value={section.content}
+                      onChange={(e) => updateSectionContent(section.id, e.target.value)}
+                      rows={6}
+                      className="input-field w-full resize-y text-sm"
+                      placeholder={`Enter ${section.title.toLowerCase()} content...`}
+                    />
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Add Section */}
+        <div className="relative">
+          <button
+            onClick={() => setShowAddSection(!showAddSection)}
+            className="btn-secondary w-full flex items-center justify-center gap-2 border-2 border-dashed border-sage-pale hover:border-sage"
+          >
+            <Plus size={16} /> Add Section
+          </button>
+          {showAddSection && (
+            <div className="absolute left-0 right-0 top-full mt-2 bg-white border border-sage-pale rounded-xl shadow-lg p-3 z-20 grid grid-cols-2 md:grid-cols-3 gap-2">
+              {SECTION_TYPE_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => addSection(opt.value)}
+                  className="text-left px-3 py-2 rounded-lg text-sm text-charcoal hover:bg-sage-pale/40 transition-colors"
+                >
+                  {opt.label}
+                </button>
               ))}
             </div>
           )}
         </div>
 
-        {/* Support Needs & Routines */}
-        <div className="grid grid-cols-2 gap-6">
-          <div className="card">
-            <h3 className="text-sm font-semibold text-charcoal mb-3 flex items-center gap-2">
-              <Shield size={16} className="text-forest" /> Support Needs
-            </h3>
-            {editingCarePlan ? (
-              <textarea
-                value={editedPlan.supportNeedsSummary ?? ''}
-                onChange={(e) => setEditedPlan((p) => ({ ...p, supportNeedsSummary: e.target.value }))}
-                rows={4}
-                className="input-field w-full resize-none"
-              />
-            ) : (
-              <p className="text-sm text-charcoal whitespace-pre-wrap">{carePlan.supportNeedsSummary || 'Not specified'}</p>
-            )}
-          </div>
-          <div className="card">
-            <h3 className="text-sm font-semibold text-charcoal mb-3 flex items-center gap-2">
-              <Clock size={16} className="text-forest" /> Preferred Routines
-            </h3>
-            {editingCarePlan ? (
-              <textarea
-                value={editedPlan.preferredRoutines ?? ''}
-                onChange={(e) => setEditedPlan((p) => ({ ...p, preferredRoutines: e.target.value }))}
-                rows={4}
-                className="input-field w-full resize-none"
-              />
-            ) : (
-              <p className="text-sm text-charcoal whitespace-pre-wrap">{carePlan.preferredRoutines || 'Not specified'}</p>
-            )}
-          </div>
-        </div>
-
-        {/* Likes / Communication */}
-        <div className="grid grid-cols-2 gap-6">
-          <div className="card">
-            <h3 className="text-sm font-semibold text-charcoal mb-3 flex items-center gap-2">
-              <Heart size={16} className="text-forest" /> Likes & Preferences
-            </h3>
-            {editingCarePlan ? (
-              <textarea
-                value={editedPlan.likesAndPreferences ?? ''}
-                onChange={(e) => setEditedPlan((p) => ({ ...p, likesAndPreferences: e.target.value }))}
-                rows={4}
-                className="input-field w-full resize-none"
-              />
-            ) : (
-              <p className="text-sm text-charcoal whitespace-pre-wrap">{carePlan.likesAndPreferences || 'Not specified'}</p>
-            )}
-          </div>
-          <div className="card">
-            <h3 className="text-sm font-semibold text-charcoal mb-3 flex items-center gap-2">
-              <Mail size={16} className="text-forest" /> Communication Needs
-            </h3>
-            {editingCarePlan ? (
-              <textarea
-                value={editedPlan.communicationNeeds ?? ''}
-                onChange={(e) => setEditedPlan((p) => ({ ...p, communicationNeeds: e.target.value }))}
-                rows={4}
-                className="input-field w-full resize-none"
-              />
-            ) : (
-              <p className="text-sm text-charcoal whitespace-pre-wrap">{carePlan.communicationNeeds || 'Not specified'}</p>
-            )}
-          </div>
-        </div>
-
-        {/* Risk Notes & Medical */}
-        <div className="grid grid-cols-2 gap-6">
-          <div className="card">
-            <h3 className="text-sm font-semibold text-charcoal mb-3 flex items-center gap-2">
-              <AlertTriangle size={16} className="text-amber-500" /> Risk Notes
-            </h3>
-            {editingCarePlan ? (
-              <textarea
-                value={editedPlan.riskNotes ?? ''}
-                onChange={(e) => setEditedPlan((p) => ({ ...p, riskNotes: e.target.value }))}
-                rows={4}
-                className="input-field w-full resize-none"
-              />
-            ) : (
-              <p className="text-sm text-charcoal whitespace-pre-wrap">{carePlan.riskNotes || 'Not specified'}</p>
-            )}
-          </div>
-          <div className="card">
-            <h3 className="text-sm font-semibold text-charcoal mb-3 flex items-center gap-2">
-              <Stethoscope size={16} className="text-forest" /> Medical Information
-            </h3>
-            {editingCarePlan ? (
-              <textarea
-                value={editedPlan.medicalInfo ?? ''}
-                onChange={(e) => setEditedPlan((p) => ({ ...p, medicalInfo: e.target.value }))}
-                rows={4}
-                className="input-field w-full resize-none"
-              />
-            ) : (
-              <p className="text-sm text-charcoal whitespace-pre-wrap">{carePlan.medicalInfo || 'Not specified'}</p>
-            )}
-          </div>
-        </div>
-
-        {/* Allied Health Contacts */}
+        {/* Allied Health Contacts (kept from legacy) */}
         {carePlan.alliedHealthContacts.length > 0 && (
           <div className="card">
             <h3 className="text-sm font-semibold text-charcoal mb-4 flex items-center gap-2">
@@ -579,7 +877,16 @@ export default function ClientProfile() {
           </div>
         )}
 
-        {/* AI Support Plan Generator */}
+        {/* Delete section confirmation */}
+        <ConfirmModal
+          open={!!deletingSectionId}
+          onClose={() => setDeletingSectionId(null)}
+          onConfirm={() => deletingSectionId && deleteSection(deletingSectionId)}
+          title="Delete Section"
+          message="Are you sure you want to delete this section? This action cannot be undone."
+        />
+
+        {/* AI Support Plan Generator (legacy full plan) */}
         {showAiGenerator && id && (
           <AiSupportPlanGenerator
             clientId={id}

@@ -45,7 +45,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { clientId, additionalContext } = req.body;
+    const { clientId, additionalContext, sectionType, existingSectionsContext } = req.body;
 
     if (!clientId) {
       return res.status(400).json({ error: 'Missing required field: clientId' });
@@ -120,6 +120,87 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       allocatedBudget: c.allocated_budget,
       spentAmount: c.spent_amount,
     }));
+
+    // ── Section-specific generation ──
+    if (sectionType) {
+      const sectionTitles: Record<string, string> = {
+        participant_details: 'Participant Details',
+        plan_overview: 'Plan Overview',
+        support_needs: 'Support Needs',
+        goals_and_outcomes: 'Goals and Outcomes',
+        risk_assessment: 'Risk Assessment',
+        communication_plan: 'Communication Plan',
+        daily_routine: 'Daily Routine',
+        medication_management: 'Medication Management',
+        behaviour_support: 'Behaviour Support',
+        cultural_considerations: 'Cultural Considerations',
+        emergency_contacts: 'Emergency Contacts',
+        review_schedule: 'Review Schedule',
+        custom: 'Custom Section',
+      };
+
+      const sectionTitle = sectionTitles[sectionType] || sectionType;
+
+      const sectionPrompt = `Generate content for the "${sectionTitle}" section of an NDIS care plan.
+
+**Participant:** ${client.first_name} ${client.last_name}
+**Age:** ${age || 'Unknown'}
+**NDIS Number:** ${client.ndis_number || 'N/A'}
+**Funding Type:** ${client.funding_type || 'N/A'}
+**Disability/Needs:** ${carePlan?.support_needs_summary || 'Not yet documented'}
+**Medical Info:** ${carePlan?.medical_info || 'Not yet documented'}
+
+${existingSectionsContext ? `**Context from other sections in this plan:**\n${existingSectionsContext}\n` : ''}
+${additionalContext ? `**Additional context from staff:** ${additionalContext}` : ''}
+
+Write professional, detailed content for ONLY the "${sectionTitle}" section. Be specific to this participant. Write in a professional but warm tone suitable for an NDIS care plan document. Output plain text only (no JSON, no markdown headers). The content should be 2-4 paragraphs.`;
+
+      const sectionResponse = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': anthropicApiKey,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-5-20250514',
+          max_tokens: 1024,
+          system: 'You are an NDIS support plan specialist. Generate professional care plan section content. Be specific, practical, and aligned with NDIS guidelines. Output plain text only.',
+          messages: [{ role: 'user', content: sectionPrompt }],
+        }),
+      });
+
+      if (!sectionResponse.ok) {
+        const errorBody = await sectionResponse.text();
+        console.error('Anthropic API error:', sectionResponse.status, errorBody);
+        return res.status(502).json({ error: 'AI service unavailable', details: `Status ${sectionResponse.status}` });
+      }
+
+      const sectionData = await sectionResponse.json();
+      const sectionText = sectionData?.content?.[0]?.text || '';
+
+      // Log
+      try {
+        await supabase.from('ai_generation_log').insert({
+          user_id: user.id,
+          client_id: clientId,
+          generation_type: `section_${sectionType}`,
+          model: 'claude-sonnet-4-5-20250514',
+          input_tokens: sectionData?.usage?.input_tokens || null,
+          output_tokens: sectionData?.usage?.output_tokens || null,
+          created_at: new Date().toISOString(),
+        });
+      } catch (logError) {
+        console.error('Failed to log AI generation:', logError);
+      }
+
+      return res.status(200).json({
+        success: true,
+        sectionContent: sectionText,
+      });
+    }
+
+    // ── Full plan generation (legacy) ──
 
     // Build the user prompt
     const userPrompt = `Generate a structured NDIS support plan for the following participant:

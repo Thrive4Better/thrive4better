@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useRef, useState, useCallback, ty
 import type { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import type { UserRole } from '@/types';
+import type { Permission } from '@/lib/permissions';
 import toast from 'react-hot-toast';
 
 // ── Logging utility ──
@@ -24,6 +25,8 @@ interface UserProfile {
   carerId: string | null;
   avatarUrl: string | null;
   phone: string | null;
+  permissions: Permission[] | null;
+  isActive: boolean;
 }
 
 interface AuthContextType {
@@ -47,7 +50,7 @@ async function fetchProfile(userId: string): Promise<UserProfile | null> {
   try {
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, full_name, role, carer_id, avatar_url, phone')
+      .select('id, full_name, role, carer_id, avatar_url, phone, permissions, is_active')
       .eq('id', userId)
       .single();
 
@@ -67,6 +70,8 @@ async function fetchProfile(userId: string): Promise<UserProfile | null> {
       carerId: data.carer_id,
       avatarUrl: data.avatar_url,
       phone: data.phone,
+      permissions: data.permissions ?? null,
+      isActive: data.is_active !== false, // default true if column doesn't exist yet
     };
   } catch (err) {
     logError('Profile fetch crashed:', err);

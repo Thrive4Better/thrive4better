@@ -285,3 +285,37 @@ export interface UserInvitation {
   acceptedAt?: string;
   createdAt: string;
 }
+
+// ── Modular Care Plan ──
+
+export type CarePlanSectionType =
+  | 'participant_details'
+  | 'plan_overview'
+  | 'support_needs'
+  | 'goals_and_outcomes'
+  | 'risk_assessment'
+  | 'communication_plan'
+  | 'daily_routine'
+  | 'medication_management'
+  | 'behaviour_support'
+  | 'cultural_considerations'
+  | 'emergency_contacts'
+  | 'review_schedule'
+  | 'custom';
+
+export interface CarePlanSection {
+  id: string;
+  type: CarePlanSectionType;
+  title: string;
+  content: string;
+  order: number;
+  lastUpdated: string;
+  generatedByAi: boolean;
+  customTitle?: string;
+}
+
+export interface ModularCarePlan extends CarePlan {
+  sections: CarePlanSection[];
+  templateVersion: string;
+  lastExported?: string;
+}

@@ -24,7 +24,6 @@ import {
   TrendingUp,
   Scale,
   Banknote,
-  Brain,
   X,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
@@ -147,7 +146,6 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
     ...sectionColors['AI TOOLS'],
     items: [
       { to: '/tools/ideas', icon: Sparkles, label: 'Activity Ideas' },
-      { to: '/tools/support-plans', icon: Brain, label: 'Support Plan Generator' },
     ],
   });
 
