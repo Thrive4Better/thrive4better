@@ -115,17 +115,30 @@ export const useStore = create<AppState>()((set, get) => ({
   isInitialized: false,
   isLoading: false,
 
-  initialize: async () => {
-    if (get().isInitialized) return;
-    set({ isLoading: true });
-    try {
-      const data = await db.fetchAllData();
-      set({ ...data, isInitialized: true, isLoading: false });
-    } catch (error) {
-      console.error('Failed to initialize store:', error);
-      set({ isInitialized: true, isLoading: false });
-    }
-  },
+  initialize: (() => {
+    let pending: Promise<void> | null = null;
+    return async () => {
+      if (get().isInitialized) return;
+      // If already in progress, return the same promise (no duplicate fetches)
+      if (pending) {
+        console.log('[Store] Initialize already in progress, reusing...');
+        return pending;
+      }
+      set({ isLoading: true });
+      pending = (async () => {
+        try {
+          const data = await db.fetchAllData();
+          set({ ...data, isInitialized: true, isLoading: false });
+        } catch (error) {
+          console.error('[Store] Failed to initialize:', error);
+          set({ isInitialized: true, isLoading: false });
+        } finally {
+          pending = null;
+        }
+      })();
+      return pending;
+    };
+  })(),
 
   // ── Clients ──
   addClient: async (client) => {

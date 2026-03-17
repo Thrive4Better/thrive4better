@@ -1,6 +1,6 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { User, Session } from '@supabase/supabase-js';
-import { supabase, withTimeout } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
 import type { UserRole } from '@/types';
 
 // ── Logging utility ──
@@ -39,33 +39,34 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 async function fetchProfile(userId: string): Promise<UserProfile | null> {
   log('Fetching profile for user:', userId);
-  const { data, error } = await withTimeout(
-    supabase
+  try {
+    const { data, error } = await supabase
       .from('profiles')
       .select('id, full_name, role, carer_id, avatar_url, phone')
       .eq('id', userId)
-      .single(),
-    8000,
-    'fetchProfile',
-  );
+      .single();
 
-  if (error) {
-    logError('Profile fetch failed:', error.message, error.code, error.details);
+    if (error) {
+      logError('Profile fetch failed:', error.message, error.code, error.details);
+      return null;
+    }
+    if (!data) {
+      logError('Profile fetch returned no data for user:', userId);
+      return null;
+    }
+    log('Profile loaded:', { role: data.role, fullName: data.full_name });
+    return {
+      id: data.id,
+      fullName: data.full_name,
+      role: data.role || 'staff',
+      carerId: data.carer_id,
+      avatarUrl: data.avatar_url,
+      phone: data.phone,
+    };
+  } catch (err) {
+    logError('Profile fetch crashed:', err);
     return null;
   }
-  if (!data) {
-    logError('Profile fetch returned no data for user:', userId);
-    return null;
-  }
-  log('Profile loaded:', { role: data.role, fullName: data.full_name });
-  return {
-    id: data.id,
-    fullName: data.full_name,
-    role: data.role || 'staff',
-    carerId: data.carer_id,
-    avatarUrl: data.avatar_url,
-    phone: data.phone,
-  };
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -73,82 +74,89 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
-
-  const loadProfile = async (u: User | null) => {
-    if (!u) {
-      setProfile(null);
-      return;
-    }
-    try {
-      const p = await fetchProfile(u.id);
-      setProfile(p);
-    } catch (err) {
-      logError('loadProfile crashed:', err);
-      setProfile(null);
-    }
-  };
+  const initializedRef = useRef(false);
 
   useEffect(() => {
     let mounted = true;
     log('Initializing auth...');
 
-    // Hard safety cutoff — if auth is STILL loading after 12s, force it through
-    const safetyTimer = setTimeout(() => {
+    // Step 1: Get existing session (this is the ONLY initial load path)
+    supabase.auth.getSession().then(async ({ data: { session: s }, error }) => {
+      if (!mounted) return;
+      if (error) {
+        logError('getSession error:', error.message);
+        setLoading(false);
+        initializedRef.current = true;
+        return;
+      }
+
+      log('Session found:', !!s, s?.user?.email ?? 'no user');
+      setSession(s);
+      setUser(s?.user ?? null);
+
+      if (s?.user) {
+        const p = await fetchProfile(s.user.id);
+        if (mounted) setProfile(p);
+      }
+
       if (mounted) {
-        logError('SAFETY CUTOFF: Auth loading exceeded 12s, forcing through');
+        log('Auth initialization complete');
+        initializedRef.current = true;
         setLoading(false);
       }
-    }, 12000);
+    }).catch((err) => {
+      logError('getSession crashed:', err);
+      if (mounted) {
+        initializedRef.current = true;
+        setLoading(false);
+      }
+    });
 
-    supabase.auth
-      .getSession()
-      .then(async ({ data: { session: s }, error }) => {
-        if (!mounted) return;
-        if (error) {
-          logError('getSession error:', error.message);
-          setLoading(false);
-          return;
-        }
-        log('Session found:', !!s, s?.user?.email ?? 'no user');
-        setSession(s);
-        setUser(s?.user ?? null);
-        await loadProfile(s?.user ?? null);
-        if (mounted) {
-          log('Auth initialization complete');
-          setLoading(false);
-        }
-      })
-      .catch((err) => {
-        logError('getSession crashed:', err);
-        if (mounted) setLoading(false);
-      });
-
+    // Step 2: Listen for FUTURE auth changes (sign in, sign out, token refresh)
+    // Skip events that fire during initial load (INITIAL_SESSION, first SIGNED_IN)
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, newSession) => {
       log('Auth state changed:', event, newSession?.user?.email ?? 'no user');
       if (!mounted) return;
+
+      // Skip initial events — getSession handles the first load
+      if (!initializedRef.current) {
+        log('Skipping auth event during initialization:', event);
+        return;
+      }
+
+      // Handle subsequent auth changes (login, logout, token refresh)
       setSession(newSession);
       setUser(newSession?.user ?? null);
-      await loadProfile(newSession?.user ?? null);
-      if (mounted) setLoading(false);
+
+      if (newSession?.user) {
+        const p = await fetchProfile(newSession.user.id);
+        if (mounted) setProfile(p);
+      } else {
+        setProfile(null);
+      }
     });
 
     return () => {
       mounted = false;
-      clearTimeout(safetyTimer);
       subscription.unsubscribe();
     };
   }, []);
 
   const signIn = async (email: string, password: string) => {
     log('Signing in:', email);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       logError('Sign in failed:', error.message);
       throw error;
     }
     log('Sign in successful');
+    // Immediately set user/session and fetch profile (don't wait for onAuthStateChange)
+    setSession(data.session);
+    setUser(data.user);
+    const p = await fetchProfile(data.user.id);
+    setProfile(p);
   };
 
   const signUp = async (email: string, password: string, fullName: string) => {
@@ -167,12 +175,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const verifyOtp = async (email: string, token: string) => {
     log('Verifying OTP for:', email);
-    const { error } = await supabase.auth.verifyOtp({ email, token, type: 'signup' });
+    const { data, error } = await supabase.auth.verifyOtp({ email, token, type: 'signup' });
     if (error) {
       logError('OTP verification failed:', error.message);
       throw error;
     }
     log('OTP verified');
+    if (data.session && data.user) {
+      setSession(data.session);
+      setUser(data.user);
+      const p = await fetchProfile(data.user.id);
+      setProfile(p);
+    }
   };
 
   const signOut = async () => {
@@ -183,11 +197,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw error;
     }
     setProfile(null);
+    setUser(null);
+    setSession(null);
     log('Signed out');
   };
 
   const refreshProfile = async () => {
-    await loadProfile(user);
+    if (user) {
+      const p = await fetchProfile(user.id);
+      setProfile(p);
+    }
   };
 
   const role: UserRole = profile?.role ?? 'staff';
