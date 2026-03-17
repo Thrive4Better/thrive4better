@@ -94,7 +94,7 @@ When providing advice:
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-5-20250514',
+        model: 'claude-sonnet-4-20250514',
         max_tokens: 1500,
         system: systemPrompt,
         messages: [
@@ -117,7 +117,7 @@ When providing advice:
       await supabase.from('ai_generation_log').insert({
         user_id: user.id,
         generation_type: 'accounting_chat',
-        model: 'claude-sonnet-4-5-20250514',
+        model: 'claude-sonnet-4-20250514',
         input_tokens: anthropicData?.usage?.input_tokens || null,
         output_tokens: anthropicData?.usage?.output_tokens || null,
         created_at: new Date().toISOString(),

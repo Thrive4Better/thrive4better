@@ -1,9 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.VITE_SUPABASE_URL!;
-const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const anthropicApiKey = process.env.ANTHROPIC_API_KEY!;
+const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
+const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+const anthropicApiKey = process.env.ANTHROPIC_API_KEY || '';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -27,6 +27,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  // Verify env vars are set
+  if (!supabaseUrl || !supabaseServiceRoleKey) {
+    console.error('Missing Supabase env vars:', { supabaseUrl: !!supabaseUrl, serviceRoleKey: !!supabaseServiceRoleKey });
+    return res.status(500).json({ error: 'Server misconfiguration: missing Supabase credentials' });
+  }
+  if (!anthropicApiKey) {
+    console.error('Missing ANTHROPIC_API_KEY');
+    return res.status(500).json({ error: 'Server misconfiguration: missing ANTHROPIC_API_KEY' });
   }
 
   // Extract and verify JWT
@@ -107,7 +117,7 @@ Respond with valid JSON as an array in this exact structure:
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-5-20250514',
+        model: 'claude-sonnet-4-20250514',
         max_tokens: 4096,
         system: 'You are a creative NDIS activity coordinator in Australia. Suggest inclusive, accessible activities tailored to participants\' interests and support needs. Consider NDIS funding eligibility. Output valid JSON only.',
         messages: [
@@ -152,7 +162,7 @@ Respond with valid JSON as an array in this exact structure:
       await supabase.from('ai_generation_log').insert({
         user_id: user.id,
         generation_type: 'activity_ideas',
-        model: 'claude-sonnet-4-5-20250514',
+        model: 'claude-sonnet-4-20250514',
         input_tokens: anthropicData?.usage?.input_tokens || null,
         output_tokens: anthropicData?.usage?.output_tokens || null,
         created_at: new Date().toISOString(),

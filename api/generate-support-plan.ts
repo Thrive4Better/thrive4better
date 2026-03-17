@@ -163,7 +163,7 @@ Write professional, detailed content for ONLY the "${sectionTitle}" section. Be 
           'anthropic-version': '2023-06-01',
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-5-20250514',
+          model: 'claude-sonnet-4-20250514',
           max_tokens: 1024,
           system: 'You are an NDIS support plan specialist. Generate professional care plan section content. Be specific, practical, and aligned with NDIS guidelines. Output plain text only.',
           messages: [{ role: 'user', content: sectionPrompt }],
@@ -185,7 +185,7 @@ Write professional, detailed content for ONLY the "${sectionTitle}" section. Be 
           user_id: user.id,
           client_id: clientId,
           generation_type: `section_${sectionType}`,
-          model: 'claude-sonnet-4-5-20250514',
+          model: 'claude-sonnet-4-20250514',
           input_tokens: sectionData?.usage?.input_tokens || null,
           output_tokens: sectionData?.usage?.output_tokens || null,
           created_at: new Date().toISOString(),
@@ -265,7 +265,7 @@ Generate 3-6 goals that are SMART (Specific, Measurable, Achievable, Relevant, T
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-5-20250514',
+        model: 'claude-sonnet-4-20250514',
         max_tokens: 4096,
         system: 'You are an NDIS support plan specialist. Generate structured support plans based on participant data. Be specific, practical, and aligned with NDIS guidelines. Output valid JSON only.',
         messages: [
@@ -310,7 +310,7 @@ Generate 3-6 goals that are SMART (Specific, Measurable, Achievable, Relevant, T
         user_id: user.id,
         client_id: clientId,
         generation_type: 'support_plan',
-        model: 'claude-sonnet-4-5-20250514',
+        model: 'claude-sonnet-4-20250514',
         input_tokens: anthropicData?.usage?.input_tokens || null,
         output_tokens: anthropicData?.usage?.output_tokens || null,
         created_at: new Date().toISOString(),

@@ -93,7 +93,7 @@ Respond with valid JSON only in this exact structure:
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-5-20250514',
+        model: 'claude-sonnet-4-20250514',
         max_tokens: 1024,
         system: 'You are an NDIS invoice data parser. Extract structured invoice data from natural language input. Output valid JSON only, no markdown formatting.',
         messages: [
@@ -135,7 +135,7 @@ Respond with valid JSON only in this exact structure:
       await supabase.from('ai_generation_log').insert({
         user_id: user.id,
         generation_type: 'invoice_parse',
-        model: 'claude-sonnet-4-5-20250514',
+        model: 'claude-sonnet-4-20250514',
         input_tokens: anthropicData?.usage?.input_tokens || null,
         output_tokens: anthropicData?.usage?.output_tokens || null,
         created_at: new Date().toISOString(),
