@@ -733,8 +733,8 @@ export default function ShiftsList() {
               const client = data.clientId ? getClientById(data.clientId) : null;
               if (carer?.email) {
                 notifyShiftUpdated(
-                  carer.email, carer.phone, carer.name,
-                  client?.name || 'Client', data.date || editingShift.date,
+                  carer.email, carer.phone, `${carer.firstName} ${carer.lastName}`,
+                  client ? `${client.firstName} ${client.lastName}` : 'Client', data.date || editingShift.date,
                   data.startTime || editingShift.startTime, data.endTime || editingShift.endTime,
                   'Shift details have been updated'
                 ).catch(() => {});
@@ -747,8 +747,8 @@ export default function ShiftsList() {
               const client = data.clientId ? getClientById(data.clientId) : null;
               if (carer?.email) {
                 notifyShiftAssigned(
-                  carer.email, carer.phone, carer.name,
-                  client?.name || 'Client', data.date,
+                  carer.email, carer.phone, `${carer.firstName} ${carer.lastName}`,
+                  client ? `${client.firstName} ${client.lastName}` : 'Client', data.date,
                   data.startTime, data.endTime, data.serviceType,
                   client?.address, data.notes
                 ).catch(() => {});

@@ -66,7 +66,7 @@ export default function ContractorInvoices() {
     const carer = carers.find(c => c.id === invoice.carerId);
     if (carer?.email) {
       notifyContractorInvoiceApproved(
-        carer.email, carer.phone, carer.name,
+        carer.email, carer.phone, `${carer.firstName} ${carer.lastName}`,
         invoice.invoiceNumber, formatCurrency(invoice.total),
         new Date().toLocaleDateString('en-AU')
       ).catch(() => {});
@@ -89,7 +89,7 @@ export default function ContractorInvoices() {
     const carer = carers.find(c => c.id === invoice.carerId);
     if (carer?.email) {
       notifyContractorInvoiceRejected(
-        carer.email, carer.phone, carer.name,
+        carer.email, carer.phone, `${carer.firstName} ${carer.lastName}`,
         invoice.invoiceNumber, formatCurrency(invoice.total),
         rejectionReason.trim()
       ).catch(() => {});
