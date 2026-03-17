@@ -139,6 +139,8 @@ export const ROLE_DEFAULTS: Record<UserRole, Permission[]> = {
     'careplans.view',
     'roster.view',
     'timesheets.view',
+    'invoices.view',
+    'invoices.create',
     'incidents.create',
     'incidents.view',
     'documents.view',
