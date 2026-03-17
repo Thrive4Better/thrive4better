@@ -4,6 +4,7 @@ import Sidebar from './Sidebar';
 import StaffSidebar from './StaffSidebar';
 import ClientSidebar from './ClientSidebar';
 import Header from './Header';
+import ViewAsBar from './ViewAsBar';
 import AccountingChatbot from '@/components/ai/AccountingChatbot';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -45,6 +46,7 @@ export default function AppLayout() {
       )}
 
       <div className="lg:ml-60 min-h-screen flex flex-col">
+        <ViewAsBar />
         <Header onToggleSidebar={toggleSidebar} />
         <main className="p-3 sm:p-4 lg:p-6 flex-1">
           <Outlet />

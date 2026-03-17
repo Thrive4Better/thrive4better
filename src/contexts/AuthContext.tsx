@@ -35,7 +35,12 @@ interface AuthContextType {
   loading: boolean;
   profile: UserProfile | null;
   role: UserRole;
+  /** The actual role from the database (never overridden) */
+  actualRole: UserRole;
   carerId: string | null;
+  /** Set a role override to preview the app as a different role (admin only) */
+  viewAsRole: UserRole | null;
+  setViewAsRole: (role: UserRole | null) => void;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, fullName: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -84,6 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [viewAsRole, setViewAsRoleState] = useState<UserRole | null>(null);
   const initializedRef = useRef(false);
 
   // ── Session timeout tracking ──
@@ -299,6 +305,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfile(null);
     setUser(null);
     setSession(null);
+    setViewAsRoleState(null);
     // Clear any residual localStorage/sessionStorage auth data
     try {
       localStorage.removeItem('supabase.auth.token');
@@ -321,12 +328,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const role: UserRole = profile?.role ?? 'guest' as UserRole;
+  const actualRole: UserRole = profile?.role ?? 'guest' as UserRole;
+  // Only admins can use viewAsRole; it overrides the effective role used for permissions/sidebar
+  const setViewAsRole = useCallback((r: UserRole | null) => {
+    if (actualRole !== 'admin') return; // Only admins can preview
+    setViewAsRoleState(r);
+    if (r) {
+      log('Viewing as role:', r);
+    } else {
+      log('Exited role preview');
+    }
+  }, [actualRole]);
+
+  const role: UserRole = (actualRole === 'admin' && viewAsRole) ? viewAsRole : actualRole;
   const carerId = profile?.carerId ?? null;
 
   return (
     <AuthContext.Provider
-      value={{ user, session, loading, profile, role, carerId, signIn, signUp, signOut, verifyOtp, refreshProfile }}
+      value={{ user, session, loading, profile, role, actualRole, carerId, viewAsRole, setViewAsRole, signIn, signUp, signOut, verifyOtp, refreshProfile }}
     >
       {children}
     </AuthContext.Provider>
