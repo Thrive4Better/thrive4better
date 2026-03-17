@@ -284,7 +284,7 @@ export default function ClientProfile() {
               </div>
               <div>
                 <p className="text-mid-gray text-xs">Plan Period</p>
-                <p className="text-charcoal">{formatDate(client.planStartDate)} — {formatDate(client.planEndDate)}</p>
+                <p className="text-charcoal">{formatDate(client.planStartDate)} - {formatDate(client.planEndDate)}</p>
               </div>
               {client.planManagerName && (
                 <div>
@@ -691,7 +691,7 @@ export default function ClientProfile() {
                       <td className="table-cell text-xs">{shift.supportCategory}</td>
                       <td className="table-cell"><StatusBadge status={shift.status} /></td>
                       <td className="table-cell text-xs text-mid-gray max-w-[160px] truncate" title={shift.notes}>
-                        {shift.notes || '—'}
+                        {shift.notes || '-'}
                       </td>
                     </tr>
                   ))}
@@ -741,7 +741,7 @@ export default function ClientProfile() {
                 <tr key={invoice.id} className="border-b border-sage-pale/50 hover:bg-sage-pale/20 transition-colors">
                   <td className="table-cell font-medium font-mono">{invoice.invoiceNumber}</td>
                   <td className="table-cell">
-                    {formatDate(invoice.periodStart)} — {formatDate(invoice.periodEnd)}
+                    {formatDate(invoice.periodStart)} - {formatDate(invoice.periodEnd)}
                   </td>
                   <td className="table-cell font-medium">{formatCurrency(invoice.total)}</td>
                   <td className="table-cell"><StatusBadge status={invoice.status} /></td>

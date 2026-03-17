@@ -260,7 +260,7 @@ export const mockCarePlans: CarePlan[] = [
     preferredRoutines: 'Mornings: Wake at 7:30am, breakfast routine, medication. Support sessions preferred between 9am-1pm. Walks therapy dog Biscuit at 3pm daily.',
     likesAndPreferences: 'Loves cooking (especially baking), music therapy, and spending time with therapy dog Biscuit. Enjoys gardening and craft activities. Prefers female support workers for personal care.',
     communicationNeeds: 'Communicates well verbally. May need extra time to process complex information. Responds well to visual schedules and written lists.',
-    riskNotes: 'Low falls risk. Can become anxious in crowded environments. Has an action plan for anxiety episodes — see medical folder.',
+    riskNotes: 'Low falls risk. Can become anxious in crowded environments. Has an action plan for anxiety episodes - see medical folder.',
     medicalInfo: 'Conditions: Anxiety disorder, mild intellectual disability. Medications: Sertraline 50mg daily (morning). Allergies: Penicillin. GP: Dr. Kim Patel, Fitzroy Medical Centre.',
     alliedHealthContacts: [
       { id: 'ah-1a', name: 'Dr. Kim Patel', role: 'GP', phone: '03 9415 2200', email: 'reception@fitzroymedical.com.au' },
@@ -280,7 +280,7 @@ export const mockCarePlans: CarePlan[] = [
     preferredRoutines: 'Morning routine starts at 7am. Enjoys an early start. Attends physio on Tuesdays. Social group Wednesday afternoons. Prefers Saturday community outings.',
     likesAndPreferences: 'Passionate about AFL (Collingwood supporter). Enjoys movies, board games, and pub lunches with mates. Prefers male support workers.',
     communicationNeeds: 'Clear verbal communicator. No communication aids needed. Appreciates direct, honest communication style.',
-    riskNotes: 'Pressure injury risk — requires regular repositioning. Manual handling plan in place for transfers. Uses ceiling hoist in bathroom.',
+    riskNotes: 'Pressure injury risk - requires regular repositioning. Manual handling plan in place for transfers. Uses ceiling hoist in bathroom.',
     medicalInfo: 'Conditions: Spinal cord injury (T6), neurogenic bladder. Medications: Baclofen 10mg TDS, Oxybutynin 5mg BD. Allergies: Nil known. GP: Dr. Andrew Ross, Reservoir Medical.',
     alliedHealthContacts: [
       { id: 'ah-2a', name: 'Dr. Andrew Ross', role: 'GP', phone: '03 9462 1100', email: 'reception@reservoirmedical.com.au' },
