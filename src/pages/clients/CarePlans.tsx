@@ -1,10 +1,11 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '@/stores/useStore';
-import { formatDate } from '@/lib/utils';
+import { formatDate, generateId } from '@/lib/utils';
 import StatusBadge from '@/components/ui/StatusBadge';
 import EmptyState from '@/components/ui/EmptyState';
-import { Heart, Target, ChevronRight, Calendar, ClipboardList } from 'lucide-react';
+import AiSupportPlanGenerator from '@/components/ai/AiSupportPlanGenerator';
+import { Heart, Target, ChevronRight, Calendar, ClipboardList, Sparkles } from 'lucide-react';
 import type { Client, CarePlan, CarePlanGoal } from '@/types';
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -24,7 +25,8 @@ interface CarePlanSummary {
 
 export default function CarePlans() {
   const navigate = useNavigate();
-  const { clients, carePlans } = useStore();
+  const { clients, carePlans, updateCarePlan } = useStore();
+  const [aiGeneratorClientId, setAiGeneratorClientId] = useState<string | null>(null);
 
   const summaries: CarePlanSummary[] = useMemo(() => {
     return carePlans
@@ -45,6 +47,35 @@ export default function CarePlans() {
       .filter((s): s is CarePlanSummary => s !== null)
       .sort((a, b) => a.client.lastName.localeCompare(b.client.lastName));
   }, [clients, carePlans]);
+
+  function handleAiPlanApply(planData: {
+    supportNeedsSummary: string;
+    goals: { description: string; targetDate: string; rationale: string }[];
+    preferredRoutines: string;
+    riskNotes: string;
+    communicationStrategies: string;
+  }) {
+    if (!aiGeneratorClientId) return;
+    const plan = carePlans.find((cp) => cp.clientId === aiGeneratorClientId);
+    if (!plan) return;
+
+    const newGoals: CarePlanGoal[] = planData.goals.map((g) => ({
+      id: generateId(),
+      description: g.description,
+      targetDate: g.targetDate,
+      status: 'Not Started' as const,
+    }));
+
+    updateCarePlan(plan.id, {
+      supportNeedsSummary: planData.supportNeedsSummary,
+      preferredRoutines: planData.preferredRoutines,
+      riskNotes: planData.riskNotes,
+      communicationNeeds: planData.communicationStrategies,
+      goals: [...plan.goals, ...newGoals],
+    });
+
+    setAiGeneratorClientId(null);
+  }
 
   if (summaries.length === 0) {
     return (
@@ -77,23 +108,46 @@ export default function CarePlans() {
       {/* Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {summaries.map(({ client, carePlan, goalCounts }) => (
-          <button
+          <div
             key={carePlan.id}
-            onClick={() => navigate(`/clients/${client.id}?tab=care-plan`)}
             className="card text-left hover:shadow-md hover:border-sage transition-all group"
           >
             {/* Client info */}
             <div className="flex items-start justify-between mb-4">
-              <div>
+              <button
+                onClick={() => navigate(`/clients/${client.id}?tab=care-plan`)}
+                className="text-left flex-1"
+              >
                 <h3 className="text-base font-semibold text-charcoal group-hover:text-forest transition-colors">
                   {client.firstName} {client.lastName}
                 </h3>
                 <p className="text-xs text-mid-gray font-mono mt-0.5">NDIS: {client.ndisNumber}</p>
+              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setAiGeneratorClientId(client.id);
+                  }}
+                  className="p-1.5 rounded-lg hover:bg-sage-pale text-mid-gray hover:text-forest transition-colors"
+                  title="Generate with AI"
+                >
+                  <Sparkles size={16} />
+                </button>
+                <button
+                  onClick={() => navigate(`/clients/${client.id}?tab=care-plan`)}
+                  className="p-1.5 rounded-lg hover:bg-sage-pale text-mid-gray group-hover:text-forest transition-colors"
+                >
+                  <ChevronRight size={18} />
+                </button>
               </div>
-              <ChevronRight size={18} className="text-mid-gray group-hover:text-forest transition-colors mt-1" />
             </div>
 
-            {/* Dates */}
+            {/* Dates - clickable to navigate */}
+            <button
+              onClick={() => navigate(`/clients/${client.id}?tab=care-plan`)}
+              className="w-full text-left"
+            >
             <div className="flex items-center gap-4 mb-4 text-xs text-mid-gray">
               <div className="flex items-center gap-1.5">
                 <Calendar size={12} />
@@ -161,9 +215,19 @@ export default function CarePlans() {
                 <p className="text-xs text-mid-gray">No goals defined yet</p>
               )}
             </div>
-          </button>
+            </button>
+          </div>
         ))}
       </div>
+
+      {/* AI Support Plan Generator Slide-over */}
+      {aiGeneratorClientId && (
+        <AiSupportPlanGenerator
+          clientId={aiGeneratorClientId}
+          onClose={() => setAiGeneratorClientId(null)}
+          onApply={handleAiPlanApply}
+        />
+      )}
     </div>
   );
 }

@@ -55,17 +55,32 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
   };
 
   type NavItem = { to: string; icon: typeof LayoutDashboard; label: string };
-  type NavSection = { label: string; items: NavItem[] };
+  type NavSection = { label: string; color: string; dotColor: string; items: NavItem[] };
+
+  // Color-coded sections for visual navigation
+  const sectionColors: Record<string, { color: string; dotColor: string }> = {
+    OVERVIEW:               { color: 'text-forest',       dotColor: 'bg-forest' },
+    CLIENTS:                { color: 'text-blue-600',     dotColor: 'bg-blue-500' },
+    ROSTER:                 { color: 'text-violet-600',   dotColor: 'bg-violet-500' },
+    'COMPLIANCE & SAFETY':  { color: 'text-amber-600',    dotColor: 'bg-amber-500' },
+    FINANCE:                { color: 'text-emerald-600',  dotColor: 'bg-emerald-500' },
+    ACCOUNTING:             { color: 'text-teal-600',     dotColor: 'bg-teal-500' },
+    REPORTS:                { color: 'text-indigo-600',   dotColor: 'bg-indigo-500' },
+    'AI TOOLS':             { color: 'text-purple-600',   dotColor: 'bg-purple-500' },
+    ADMIN:                  { color: 'text-rose-600',     dotColor: 'bg-rose-500' },
+  };
 
   const navSections: NavSection[] = [
     {
       label: 'OVERVIEW',
+      ...sectionColors.OVERVIEW,
       items: [
         { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
       ],
     },
     {
       label: 'CLIENTS',
+      ...sectionColors.CLIENTS,
       items: [
         { to: '/clients', icon: Users, label: 'All Clients' },
         { to: '/clients/care-plans', icon: ClipboardList, label: 'Care Plans' },
@@ -73,6 +88,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
     },
     {
       label: 'ROSTER',
+      ...sectionColors.ROSTER,
       items: [
         { to: '/roster', icon: Calendar, label: 'Weekly Roster' },
         { to: '/roster/shifts', icon: Clock, label: 'Shifts' },
@@ -84,6 +100,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
     },
     {
       label: 'COMPLIANCE & SAFETY',
+      ...sectionColors['COMPLIANCE & SAFETY'],
       items: [
         { to: '/incidents', icon: AlertTriangle, label: 'Incidents' },
         { to: '/compliance', icon: ShieldCheck, label: 'Compliance Tracker' },
@@ -91,6 +108,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
     },
     {
       label: 'FINANCE',
+      ...sectionColors.FINANCE,
       items: [
         { to: '/invoices', icon: FileText, label: 'Invoices' },
         { to: '/invoices/new', icon: FilePlus, label: 'Invoice Builder' },
@@ -103,6 +121,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
   if (isAdminOrManager) {
     navSections.push({
       label: 'ACCOUNTING',
+      ...sectionColors.ACCOUNTING,
       items: [
         { to: '/accounting/chart-of-accounts', icon: Landmark, label: 'Chart of Accounts' },
         { to: '/accounting/transactions', icon: ArrowLeftRight, label: 'Transactions' },
@@ -116,6 +135,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
 
     navSections.push({
       label: 'REPORTS',
+      ...sectionColors.REPORTS,
       items: [
         { to: '/reports', icon: BarChart3, label: 'Reports & Analytics' },
       ],
@@ -124,6 +144,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
 
   navSections.push({
     label: 'AI TOOLS',
+    ...sectionColors['AI TOOLS'],
     items: [
       { to: '/tools/ideas', icon: Sparkles, label: 'Activity Ideas' },
       { to: '/tools/support-plans', icon: Brain, label: 'Support Plan Generator' },
@@ -133,6 +154,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
   if (isAdmin) {
     navSections.push({
       label: 'ADMIN',
+      ...sectionColors.ADMIN,
       items: [
         { to: '/admin/users', icon: UserCog, label: 'User Management' },
       ],
@@ -172,9 +194,12 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
       <nav className="flex-1 overflow-y-auto py-4 px-3">
         {navSections.map((section) => (
           <div key={section.label} className="mb-5">
-            <p className="px-3 mb-1.5 text-[10px] font-semibold text-mid-gray tracking-widest uppercase">
-              {section.label}
-            </p>
+            <div className="flex items-center gap-2 px-3 mb-1.5">
+              <span className={`w-1.5 h-1.5 rounded-full ${section.dotColor} flex-shrink-0`} />
+              <p className={`text-[10px] font-semibold tracking-widest uppercase ${section.color}`}>
+                {section.label}
+              </p>
+            </div>
             {section.items.map((item) => {
               const Icon = item.icon;
               const active = isActive(item.to);

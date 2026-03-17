@@ -13,6 +13,7 @@ import EmptyState from '@/components/ui/EmptyState';
 import {
   Search, Plus, Users, ChevronUp, ChevronDown, MoreHorizontal,
   Pencil, Trash2, Upload, Download, X, AlertCircle, CheckCircle2,
+  Archive, ArchiveRestore,
 } from 'lucide-react';
 import type { Client } from '@/types';
 
@@ -45,7 +46,7 @@ const clientSchema = z.object({
   planManagerPhone: z.string().default(''),
   supportCoordinatorName: z.string().default(''),
   supportCoordinatorContact: z.string().default(''),
-  status: z.enum(['Active', 'Inactive', 'On Hold']).default('Active'),
+  status: z.enum(['Active', 'Inactive', 'On Hold', 'Archived']).default('Active'),
   notes: z.string().default(''),
 });
 
@@ -204,6 +205,7 @@ export default function ClientList() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('All');
   const [fundingFilter, setFundingFilter] = useState<string>('All');
+  const [showArchived, setShowArchived] = useState(false);
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [slideOpen, setSlideOpen] = useState(false);
@@ -219,12 +221,17 @@ export default function ClientList() {
 
   // Unique funding types for the filter dropdown
   const fundingTypes = ['All', 'Agency Managed', 'Plan Managed', 'Self Managed'];
-  const statusOptions = ['All', 'Active', 'Inactive', 'On Hold'];
+  const statusOptions = ['All', 'Active', 'Inactive', 'On Hold', 'Archived'];
 
   // ── Filtering & sorting ─────────────────────────────────────────────────
 
   const filteredClients = useMemo(() => {
     let result = [...clients];
+
+    // Hide archived by default unless toggled or explicitly filtering
+    if (!showArchived && statusFilter !== 'Archived') {
+      result = result.filter((c) => c.status !== 'Archived');
+    }
 
     // Search
     if (search) {
@@ -257,7 +264,7 @@ export default function ClientList() {
     });
 
     return result;
-  }, [clients, search, statusFilter, fundingFilter, sortField, sortDir]);
+  }, [clients, search, statusFilter, fundingFilter, sortField, sortDir, showArchived]);
 
   // ── Form ────────────────────────────────────────────────────────────────
 
@@ -373,6 +380,18 @@ export default function ClientList() {
   function handleDelete(client: Client) {
     deleteClient(client.id);
     toast.success(`${client.firstName} ${client.lastName} deleted`);
+    setMenuOpenId(null);
+  }
+
+  async function handleArchive(client: Client) {
+    await updateClient(client.id, { status: 'Archived' });
+    toast.success(`${client.firstName} ${client.lastName} archived`);
+    setMenuOpenId(null);
+  }
+
+  async function handleUnarchive(client: Client) {
+    await updateClient(client.id, { status: 'Active' });
+    toast.success(`${client.firstName} ${client.lastName} restored`);
     setMenuOpenId(null);
   }
 
@@ -540,6 +559,15 @@ export default function ClientList() {
               </option>
             ))}
           </select>
+          <label className="flex items-center gap-2 text-sm text-mid-gray cursor-pointer whitespace-nowrap">
+            <input
+              type="checkbox"
+              checked={showArchived}
+              onChange={(e) => setShowArchived(e.target.checked)}
+              className="rounded border-sage text-forest focus:ring-forest"
+            />
+            Show archived
+          </label>
         </div>
       </div>
 
@@ -604,7 +632,10 @@ export default function ClientList() {
                 {filteredClients.map((client) => (
                   <tr
                     key={client.id}
-                    className="border-b border-sage-pale/50 hover:bg-sage-pale/20 transition-colors"
+                    className={cn(
+                      'border-b border-sage-pale/50 hover:bg-sage-pale/20 transition-colors',
+                      client.status === 'Archived' && 'opacity-50'
+                    )}
                   >
                     <td className="table-cell">
                       <button
@@ -641,6 +672,21 @@ export default function ClientList() {
                               >
                                 <Pencil size={14} /> Edit
                               </button>
+                              {client.status === 'Archived' ? (
+                                <button
+                                  onClick={() => handleUnarchive(client)}
+                                  className="flex items-center gap-2 w-full px-3 py-2 text-sm text-forest hover:bg-sage-pale/50 transition-colors"
+                                >
+                                  <ArchiveRestore size={14} /> Unarchive
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => handleArchive(client)}
+                                  className="flex items-center gap-2 w-full px-3 py-2 text-sm text-amber-600 hover:bg-amber-50 transition-colors"
+                                >
+                                  <Archive size={14} /> Archive
+                                </button>
+                              )}
                               <button
                                 onClick={() => handleDelete(client)}
                                 className="flex items-center gap-2 w-full px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"

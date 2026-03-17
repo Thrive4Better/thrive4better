@@ -21,10 +21,13 @@ import {
   Clock,
   Trash2,
   CheckCircle2,
+  MessageSquare,
+  Loader2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import { useStore } from '@/stores/useStore';
+import { useAuth } from '@/contexts/AuthContext';
 import type { Shift } from '@/types';
 import {
   cn,
@@ -176,9 +179,11 @@ export default function WeeklyRoster() {
   const [currentWeekStart, setCurrentWeekStart] = useState(() =>
     startOfWeek(new Date(), { weekStartsOn: 1 })
   );
+  const { session } = useAuth();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingShift, setEditingShift] = useState<Shift | null>(null);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [sendingAllReminders, setSendingAllReminders] = useState(false);
 
   // Filters
   const [filterCarerId, setFilterCarerId] = useState('');
@@ -262,6 +267,49 @@ export default function WeeklyRoster() {
     setEditingShift(null);
   }, []);
 
+  // Send reminders for all shifts in the visible week
+  const handleSendAllReminders = useCallback(async () => {
+    if (weekShifts.length === 0) {
+      toast.error('No shifts in the current week to send reminders for');
+      return;
+    }
+
+    const token = session?.access_token;
+    if (!token) {
+      toast.error('You must be logged in to send reminders');
+      return;
+    }
+
+    setSendingAllReminders(true);
+    try {
+      const res = await fetch('/api/send-reminders', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          shiftIds: weekShifts.map((s) => s.id),
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to send reminders');
+      }
+
+      if (data.simulated > 0) {
+        toast.success(`${data.simulated} reminder(s) queued (Twilio not configured yet)`);
+      } else {
+        toast.success(data.message || `Sent ${data.sent} reminder(s)`);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to send reminders');
+    } finally {
+      setSendingAllReminders(false);
+    }
+  }, [weekShifts, session]);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -272,10 +320,20 @@ export default function WeeklyRoster() {
             Manage shifts and schedules for participants and carers
           </p>
         </div>
-        <button onClick={openNewShift} className="btn-primary flex items-center gap-2">
-          <Plus size={18} />
-          Add Shift
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleSendAllReminders}
+            disabled={sendingAllReminders || weekShifts.length === 0}
+            className="btn-secondary flex items-center gap-2"
+          >
+            {sendingAllReminders ? <Loader2 size={16} className="animate-spin" /> : <MessageSquare size={16} />}
+            Send All Reminders ({weekShifts.length})
+          </button>
+          <button onClick={openNewShift} className="btn-primary flex items-center gap-2">
+            <Plus size={18} />
+            Add Shift
+          </button>
+        </div>
       </div>
 
       {/* Filter Bar + Week Navigation */}

@@ -22,6 +22,8 @@ import {
   X,
   AlertCircle,
   CheckCircle2,
+  Archive,
+  ArchiveRestore,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -36,7 +38,7 @@ import EmptyState from '@/components/ui/EmptyState';
 
 // ── Constants ──────────────────────────────────────────────
 
-const CARER_STATUSES = ['Active', 'Unavailable', 'On Leave'] as const;
+const CARER_STATUSES = ['Active', 'Unavailable', 'On Leave', 'Archived'] as const;
 
 const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
@@ -183,6 +185,7 @@ export default function CarersList() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingCarer, setEditingCarer] = useState<Carer | null>(null);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
 
   // CSV Import state
   const [importModalOpen, setImportModalOpen] = useState(false);
@@ -219,6 +222,25 @@ export default function CarersList() {
     });
     return stats;
   }, [carers, getShiftsByCarer, thisWeekStart, thisWeekEnd]);
+
+  // Filtered carers (archive toggle)
+  const filteredCarers = useMemo(
+    () => showArchived ? carers : carers.filter((c) => c.status !== 'Archived'),
+    [carers, showArchived]
+  );
+
+  // Archive / unarchive
+  const handleArchive = useCallback(async (carer: Carer, e: React.MouseEvent) => {
+    e.stopPropagation();
+    await updateCarer(carer.id, { status: 'Archived' });
+    toast.success(`${carer.firstName} ${carer.lastName} archived`);
+  }, [updateCarer]);
+
+  const handleUnarchive = useCallback(async (carer: Carer, e: React.MouseEvent) => {
+    e.stopPropagation();
+    await updateCarer(carer.id, { status: 'Active' });
+    toast.success(`${carer.firstName} ${carer.lastName} restored`);
+  }, [updateCarer]);
 
   // Drawer actions
   const openNewCarer = useCallback(() => {
@@ -304,6 +326,15 @@ export default function CarersList() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <label className="flex items-center gap-2 text-sm text-mid-gray cursor-pointer whitespace-nowrap">
+            <input
+              type="checkbox"
+              checked={showArchived}
+              onChange={(e) => setShowArchived(e.target.checked)}
+              className="rounded border-sage text-forest focus:ring-forest"
+            />
+            Show archived
+          </label>
           <button
             onClick={() => { setImportModalOpen(true); setCsvRows([]); setImportResult(null); }}
             className="btn-ghost flex items-center gap-2"
@@ -321,24 +352,28 @@ export default function CarersList() {
       </div>
 
       {/* Carer Cards */}
-      {carers.length === 0 ? (
+      {filteredCarers.length === 0 ? (
         <EmptyState
           icon={UserPlus}
           title="No carers yet"
-          description="Add your first carer to start building your team roster."
-          action={{ label: 'Add Carer', onClick: openNewCarer }}
+          description={showArchived || carers.length === 0 ? "Add your first carer to start building your team roster." : "No active carers found. Try enabling 'Show archived'."}
+          action={carers.length === 0 ? { label: 'Add Carer', onClick: openNewCarer } : undefined}
         />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {carers.map((carer) => {
+          {filteredCarers.map((carer) => {
             const initials = `${carer.firstName[0]}${carer.lastName[0]}`.toUpperCase();
             const stats = carerStats[carer.id] || { weeklyHours: 0, clientCount: 0 };
             const avatarColor = getAvatarColor(carer.id);
+            const isArchived = carer.status === 'Archived';
 
             return (
               <div
                 key={carer.id}
-                className="card p-5 hover:shadow-md transition-shadow cursor-pointer"
+                className={cn(
+                  'card p-5 hover:shadow-md transition-shadow cursor-pointer',
+                  isArchived && 'opacity-50'
+                )}
                 onClick={() => openEditCarer(carer)}
               >
                 <div className="flex items-start gap-4">
@@ -407,6 +442,25 @@ export default function CarersList() {
                         ))}
                       </div>
                     )}
+
+                    {/* Archive / Unarchive */}
+                    <div className="mt-3 pt-2 border-t border-sage-pale">
+                      {isArchived ? (
+                        <button
+                          onClick={(e) => handleUnarchive(carer, e)}
+                          className="flex items-center gap-1.5 text-xs text-forest hover:text-forest-mid transition-colors"
+                        >
+                          <ArchiveRestore size={13} /> Unarchive
+                        </button>
+                      ) : (
+                        <button
+                          onClick={(e) => handleArchive(carer, e)}
+                          className="flex items-center gap-1.5 text-xs text-mid-gray hover:text-amber-600 transition-colors"
+                        >
+                          <Archive size={13} /> Archive
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>

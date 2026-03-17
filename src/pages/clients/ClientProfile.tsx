@@ -1,14 +1,15 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useStore } from '@/stores/useStore';
-import { formatDate, formatTime, formatCurrency, cn, getServiceTypeColor } from '@/lib/utils';
+import { formatDate, formatTime, formatCurrency, cn, getServiceTypeColor, generateId } from '@/lib/utils';
 import StatusBadge from '@/components/ui/StatusBadge';
 import EmptyState from '@/components/ui/EmptyState';
+import AiSupportPlanGenerator from '@/components/ai/AiSupportPlanGenerator';
 import {
   ArrowLeft, User, CreditCard, Target, Calendar, FileText, FolderOpen,
   Phone, Mail, MapPin, Shield, Heart, AlertTriangle, Stethoscope,
   Clock, Download, Upload, File, FileImage, FileSpreadsheet,
-  Edit2, Save, X, ChevronRight, Trash2,
+  Edit2, Save, X, ChevronRight, Trash2, Sparkles,
 } from 'lucide-react';
 import type { CarePlan, CarePlanGoal, AlliedHealthContact, Shift } from '@/types';
 import { format, parseISO, isWithinInterval } from 'date-fns';
@@ -80,6 +81,7 @@ export default function ClientProfile() {
   // Care plan editing
   const [editingCarePlan, setEditingCarePlan] = useState(false);
   const [editedPlan, setEditedPlan] = useState<Partial<CarePlan>>({});
+  const [showAiGenerator, setShowAiGenerator] = useState(false);
 
   if (!_client) {
     return (
@@ -149,6 +151,34 @@ export default function ClientProfile() {
     if (!carePlan) return;
     updateCarePlan(carePlan.id, editedPlan);
     setEditingCarePlan(false);
+  }
+
+  function handleAiPlanApply(planData: {
+    supportNeedsSummary: string;
+    goals: { description: string; targetDate: string; rationale: string }[];
+    preferredRoutines: string;
+    riskNotes: string;
+    communicationStrategies: string;
+  }) {
+    if (!carePlan) return;
+
+    // Merge AI-generated goals into the existing care plan goals
+    const newGoals: CarePlanGoal[] = planData.goals.map((g) => ({
+      id: generateId(),
+      description: g.description,
+      targetDate: g.targetDate,
+      status: 'Not Started' as const,
+    }));
+
+    updateCarePlan(carePlan.id, {
+      supportNeedsSummary: planData.supportNeedsSummary,
+      preferredRoutines: planData.preferredRoutines,
+      riskNotes: planData.riskNotes,
+      communicationNeeds: planData.communicationStrategies,
+      goals: [...carePlan.goals, ...newGoals],
+    });
+
+    setShowAiGenerator(false);
   }
 
   function getCarerName(carerId: string): string {
@@ -368,6 +398,12 @@ export default function ClientProfile() {
             Last reviewed: {formatDate(carePlan.lastReviewedDate)} | Next review due: {formatDate(carePlan.nextReviewDueDate)}
           </div>
           <div className="flex gap-3">
+            <button
+              onClick={() => setShowAiGenerator(true)}
+              className="btn-secondary"
+            >
+              <Sparkles size={16} /> Generate with AI
+            </button>
             <button className="btn-secondary">
               <Download size={16} /> Export Care Plan PDF
             </button>
@@ -541,6 +577,15 @@ export default function ClientProfile() {
               </table>
             </div>
           </div>
+        )}
+
+        {/* AI Support Plan Generator */}
+        {showAiGenerator && id && (
+          <AiSupportPlanGenerator
+            clientId={id}
+            onClose={() => setShowAiGenerator(false)}
+            onApply={handleAiPlanApply}
+          />
         )}
       </div>
     );

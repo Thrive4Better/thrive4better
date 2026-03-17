@@ -20,7 +20,7 @@ export interface Client {
   planManagerPhone: string;
   supportCoordinatorName: string;
   supportCoordinatorContact: string;
-  status: 'Active' | 'Inactive' | 'On Hold';
+  status: 'Active' | 'Inactive' | 'On Hold' | 'Archived';
   notes: string;
   supportCategories: ClientSupportCategory[];
   createdAt: string;
@@ -74,7 +74,7 @@ export interface Carer {
   role: string;
   qualifications: string[];
   availability: string[];
-  status: 'Active' | 'Unavailable' | 'On Leave';
+  status: 'Active' | 'Unavailable' | 'On Leave' | 'Archived';
   notes: string;
   createdAt: string;
 }
@@ -113,7 +113,7 @@ export interface Invoice {
   gstApplicable: boolean;
   gstAmount: number;
   total: number;
-  status: 'Draft' | 'Sent' | 'Paid' | 'Overdue';
+  status: 'Draft' | 'Sent' | 'Paid' | 'Overdue' | 'Void' | 'Archived';
   createdAt: string;
 }
 

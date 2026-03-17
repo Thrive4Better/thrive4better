@@ -3,6 +3,7 @@ import { Outlet, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import StaffSidebar from './StaffSidebar';
 import Header from './Header';
+import AccountingChatbot from '@/components/ai/AccountingChatbot';
 import { useAuth } from '@/contexts/AuthContext';
 
 export default function AppLayout() {
@@ -17,6 +18,12 @@ export default function AppLayout() {
   useEffect(() => {
     setSidebarOpen(false);
   }, [location.pathname]);
+
+  // Show accounting chatbot on accounting and finance pages
+  const showChatbot = role !== 'staff' && (
+    location.pathname.startsWith('/accounting') ||
+    location.pathname.startsWith('/invoices')
+  );
 
   return (
     <div className="min-h-screen bg-cream">
@@ -40,6 +47,9 @@ export default function AppLayout() {
           <Outlet />
         </main>
       </div>
+
+      {/* AI Accounting Chatbot - shown on accounting/finance pages */}
+      {showChatbot && <AccountingChatbot />}
     </div>
   );
 }

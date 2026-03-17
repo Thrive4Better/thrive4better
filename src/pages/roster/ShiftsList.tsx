@@ -18,10 +18,13 @@ import {
   CheckCircle2,
   ListFilter,
   Download,
+  MessageSquare,
+  Loader2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import { useStore } from '@/stores/useStore';
+import { useAuth } from '@/contexts/AuthContext';
 import { exportToCsv } from '@/lib/export-utils';
 import type { Shift } from '@/types';
 import {
@@ -122,6 +125,10 @@ export default function ShiftsList() {
     getClientById,
     getCarerById,
   } = useStore();
+  const { session } = useAuth();
+
+  // SMS reminder state
+  const [sendingReminderId, setSendingReminderId] = useState<string | null>(null);
 
   // Filters
   const [filterStatus, setFilterStatus] = useState('');
@@ -339,6 +346,69 @@ export default function ShiftsList() {
     exportToCsv(`shifts-${new Date().toISOString().split('T')[0]}.csv`, headers, rows);
   }, [selectedIds, filteredShifts, getClientById, getCarerById]);
 
+  // Send SMS reminder for a single shift
+  const handleSendReminder = useCallback(async (shift: Shift) => {
+    const carer = getCarerById(shift.carerId);
+    const client = getClientById(shift.clientId);
+    if (!carer) {
+      toast.error('No carer assigned to this shift');
+      return;
+    }
+    if (!carer.phone) {
+      toast.error(`${carer.firstName} ${carer.lastName} has no phone number`);
+      return;
+    }
+
+    setSendingReminderId(shift.id);
+    try {
+      const token = session?.access_token;
+      if (!token) {
+        toast.error('You must be logged in to send reminders');
+        return;
+      }
+
+      const clientName = client ? `${client.firstName} ${client.lastName}` : 'your client';
+      const location = client?.address || '';
+      const startH = parseInt(shift.startTime.split(':')[0], 10);
+      const startM = shift.startTime.split(':')[1];
+      const suffix = startH >= 12 ? 'pm' : 'am';
+      const h12 = startH === 0 ? 12 : startH > 12 ? startH - 12 : startH;
+      const timeStr = `${h12}:${startM}${suffix}`;
+
+      let message = `Hi ${carer.firstName}, reminder: you have a shift with ${clientName} on ${shift.date} at ${timeStr}`;
+      if (location) message += ` at ${location}`;
+      message += '. - Thrive 4 Better';
+
+      const res = await fetch('/api/send-sms', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          to: carer.phone,
+          message,
+          type: 'shift_reminder',
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to send SMS');
+      }
+
+      if (data.simulated) {
+        toast.success(`Reminder ready (Twilio not configured yet) for ${carer.firstName}`);
+      } else {
+        toast.success(`Reminder sent to ${carer.firstName} ${carer.lastName}`);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to send reminder');
+    } finally {
+      setSendingReminderId(null);
+    }
+  }, [session, getCarerById, getClientById]);
+
   // Drawer
   const openNewShift = useCallback(() => {
     setEditingShift(null);
@@ -555,6 +625,7 @@ export default function ShiftsList() {
                       </button>
                     </th>
                   ))}
+                  <th className="table-header">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -616,6 +687,20 @@ export default function ShiftsList() {
                       </td>
                       <td className="table-cell">
                         <StatusBadge status={shift.status} />
+                      </td>
+                      <td className="table-cell" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          onClick={() => handleSendReminder(shift)}
+                          disabled={sendingReminderId === shift.id}
+                          className="p-1.5 rounded-lg hover:bg-sage-pale text-mid-gray hover:text-forest transition-colors disabled:opacity-50"
+                          title="Send SMS Reminder"
+                        >
+                          {sendingReminderId === shift.id ? (
+                            <Loader2 size={15} className="animate-spin" />
+                          ) : (
+                            <MessageSquare size={15} />
+                          )}
+                        </button>
                       </td>
                     </tr>
                   );

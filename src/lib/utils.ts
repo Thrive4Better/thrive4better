@@ -64,6 +64,8 @@ export function getStatusColor(status: string): string {
     'On Leave': 'bg-amber-100 text-amber-800',
     'Not Started': 'bg-gray-100 text-gray-600',
     Achieved: 'bg-green-100 text-green-800',
+    Archived: 'bg-gray-100 text-gray-400',
+    Void: 'bg-red-50 text-red-400',
   };
   return colors[status] || 'bg-gray-100 text-gray-600';
 }

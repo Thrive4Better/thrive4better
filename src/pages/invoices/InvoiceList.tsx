@@ -21,6 +21,9 @@ import {
   CreditCard,
   Mail,
   Loader2,
+  Archive,
+  ArchiveRestore,
+  Ban,
 } from 'lucide-react';
 import { parseISO, isWithinInterval, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
 import toast from 'react-hot-toast';
@@ -28,7 +31,7 @@ import { pdf } from '@react-pdf/renderer';
 import InvoicePdf from './InvoicePdf';
 import type { Invoice, Client } from '@/types';
 
-type InvoiceStatus = 'All' | 'Draft' | 'Sent' | 'Paid' | 'Overdue';
+type InvoiceStatus = 'All' | 'Draft' | 'Sent' | 'Paid' | 'Overdue' | 'Void' | 'Archived';
 type SortField = 'invoiceNumber' | 'clientName' | 'periodStart' | 'lineItems' | 'subtotal' | 'gstAmount' | 'total' | 'dueDate';
 type SortDir = 'asc' | 'desc';
 
@@ -40,6 +43,7 @@ export default function InvoiceList() {
   const [activeTab, setActiveTab] = useState<InvoiceStatus>('All');
   const [sortField, setSortField] = useState<SortField>('invoiceNumber');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const [showArchived, setShowArchived] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [sendingId, setSendingId] = useState<string | null>(null);
@@ -183,7 +187,16 @@ export default function InvoiceList() {
 
   // ── Filtered + sorted list ──
   const filteredInvoices = useMemo(() => {
-    let list = activeTab === 'All' ? invoices : invoices.filter((i) => i.status === activeTab);
+    let list = [...invoices];
+
+    // Hide archived/void by default unless toggled or explicitly filtering
+    if (!showArchived && activeTab !== 'Archived' && activeTab !== 'Void') {
+      list = list.filter((i) => i.status !== 'Archived' && i.status !== 'Void');
+    }
+
+    if (activeTab !== 'All') {
+      list = list.filter((i) => i.status === activeTab);
+    }
 
     const getClientName = (clientId: string) => {
       const c = getClientById(clientId);
@@ -222,7 +235,7 @@ export default function InvoiceList() {
     });
 
     return list;
-  }, [invoices, activeTab, sortField, sortDir, getClientById]);
+  }, [invoices, activeTab, sortField, sortDir, getClientById, showArchived]);
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
@@ -255,6 +268,29 @@ export default function InvoiceList() {
     toast.success('Invoice marked as paid');
   };
 
+  const handleVoid = (id: string) => {
+    setConfirmModal({
+      open: true,
+      title: 'Void Invoice?',
+      message: 'This will mark the invoice as void. It will be hidden from default views.',
+      onConfirm: () => {
+        updateInvoice(id, { status: 'Void' });
+        toast.success('Invoice voided');
+        setConfirmModal((m) => ({ ...m, open: false }));
+      },
+    });
+  };
+
+  const handleArchiveInvoice = (id: string) => {
+    updateInvoice(id, { status: 'Archived' });
+    toast.success('Invoice archived');
+  };
+
+  const handleUnarchiveInvoice = (id: string) => {
+    updateInvoice(id, { status: 'Draft' });
+    toast.success('Invoice restored to Draft');
+  };
+
   const handleBulkAction = (status: 'Sent' | 'Paid') => {
     const label = status === 'Sent' ? 'sent' : 'paid';
     setConfirmModal({
@@ -270,7 +306,7 @@ export default function InvoiceList() {
     });
   };
 
-  const tabs: InvoiceStatus[] = ['All', 'Draft', 'Sent', 'Paid', 'Overdue'];
+  const tabs: InvoiceStatus[] = ['All', 'Draft', 'Sent', 'Paid', 'Overdue', 'Void', 'Archived'];
 
   const SortHeader = ({ field, children }: { field: SortField; children: React.ReactNode }) => (
     <th
@@ -370,18 +406,29 @@ export default function InvoiceList() {
           })}
         </div>
 
-        {selectedIds.size > 0 && (
-          <div className="flex gap-2">
-            <button onClick={() => handleBulkAction('Sent')} className="btn-secondary text-sm">
-              <Send size={14} />
-              Mark as Sent ({selectedIds.size})
-            </button>
-            <button onClick={() => handleBulkAction('Paid')} className="btn-primary text-sm">
-              <CreditCard size={14} />
-              Mark as Paid ({selectedIds.size})
-            </button>
-          </div>
-        )}
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2 text-sm text-mid-gray cursor-pointer whitespace-nowrap">
+            <input
+              type="checkbox"
+              checked={showArchived}
+              onChange={(e) => setShowArchived(e.target.checked)}
+              className="rounded border-sage text-forest focus:ring-forest"
+            />
+            Show archived/void
+          </label>
+          {selectedIds.size > 0 && (
+            <>
+              <button onClick={() => handleBulkAction('Sent')} className="btn-secondary text-sm">
+                <Send size={14} />
+                Mark as Sent ({selectedIds.size})
+              </button>
+              <button onClick={() => handleBulkAction('Paid')} className="btn-primary text-sm">
+                <CreditCard size={14} />
+                Mark as Paid ({selectedIds.size})
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Table */}
@@ -425,7 +472,10 @@ export default function InvoiceList() {
                   return (
                     <tr
                       key={invoice.id}
-                      className="hover:bg-sage-pale/30 transition-colors"
+                      className={cn(
+                        'hover:bg-sage-pale/30 transition-colors',
+                        (invoice.status === 'Archived' || invoice.status === 'Void') && 'opacity-50'
+                      )}
                     >
                       <td className="table-cell">
                         <input
@@ -473,13 +523,39 @@ export default function InvoiceList() {
                           >
                             {sendingId === invoice.id ? <Loader2 size={15} className="animate-spin" /> : <Mail size={15} />}
                           </button>
-                          {invoice.status !== 'Paid' && (
+                          {invoice.status !== 'Paid' && invoice.status !== 'Void' && invoice.status !== 'Archived' && (
                             <button
                               onClick={() => handleMarkAsPaid(invoice.id)}
                               className="p-1.5 rounded-lg hover:bg-green-50 text-mid-gray hover:text-green-600 transition-colors"
                               title="Mark as Paid"
                             >
                               <CheckCircle2 size={15} />
+                            </button>
+                          )}
+                          {invoice.status !== 'Void' && invoice.status !== 'Archived' && (
+                            <button
+                              onClick={() => handleVoid(invoice.id)}
+                              className="p-1.5 rounded-lg hover:bg-red-50 text-mid-gray hover:text-red-500 transition-colors"
+                              title="Void Invoice"
+                            >
+                              <Ban size={15} />
+                            </button>
+                          )}
+                          {invoice.status === 'Archived' || invoice.status === 'Void' ? (
+                            <button
+                              onClick={() => handleUnarchiveInvoice(invoice.id)}
+                              className="p-1.5 rounded-lg hover:bg-sage-pale text-mid-gray hover:text-forest transition-colors"
+                              title="Restore"
+                            >
+                              <ArchiveRestore size={15} />
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleArchiveInvoice(invoice.id)}
+                              className="p-1.5 rounded-lg hover:bg-amber-50 text-mid-gray hover:text-amber-600 transition-colors"
+                              title="Archive"
+                            >
+                              <Archive size={15} />
                             </button>
                           )}
                         </div>
