@@ -1,22 +1,34 @@
 import { useState } from 'react';
-import { Bell, Clock, FileText, MessageSquare } from 'lucide-react';
+import { Bell, Clock, FileText, Mail, MessageSquare, Phone } from 'lucide-react';
 import toast from 'react-hot-toast';
-import type { ReminderSettings as ReminderSettingsType } from '@/types';
+import type { ReminderSettings as ReminderSettingsType, ReminderChannel } from '@/types';
 
 const STORAGE_KEY = 't4b_reminderSettings';
 
 function loadSettings(): ReminderSettingsType {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      // Migrate old settings that don't have channel fields
+      return {
+        ...parsed,
+        shiftReminderChannel: parsed.shiftReminderChannel || (parsed.shiftRemindersEnabled ? 'sms' : 'none'),
+        appointmentReminderChannel: parsed.appointmentReminderChannel || (parsed.appointmentRemindersEnabled ? 'sms' : 'none'),
+        overdueInvoiceReminderChannel: parsed.overdueInvoiceReminderChannel || (parsed.overdueInvoiceRemindersEnabled ? 'sms' : 'none'),
+      };
+    }
   } catch {}
   return {
     shiftRemindersEnabled: true,
     shiftReminderHoursBefore: 24,
+    shiftReminderChannel: 'sms',
     appointmentRemindersEnabled: true,
     appointmentReminderHoursBefore: 24,
+    appointmentReminderChannel: 'both',
     overdueInvoiceRemindersEnabled: false,
     overdueInvoiceReminderDaysAfter: 7,
+    overdueInvoiceReminderChannel: 'email',
   };
 }
 
@@ -24,11 +36,57 @@ function saveSettings(settings: ReminderSettingsType) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
 }
 
+const CHANNEL_OPTIONS: { value: ReminderChannel; label: string; icon: typeof Mail }[] = [
+  { value: 'none', label: 'No reminders', icon: Bell },
+  { value: 'sms', label: 'SMS only', icon: Phone },
+  { value: 'email', label: 'Email only', icon: Mail },
+  { value: 'both', label: 'SMS & Email', icon: MessageSquare },
+];
+
+function ChannelSelector({
+  value,
+  onChange,
+}: {
+  value: ReminderChannel;
+  onChange: (v: ReminderChannel) => void;
+}) {
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">
+      {CHANNEL_OPTIONS.map((opt) => {
+        const Icon = opt.icon;
+        const selected = value === opt.value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => onChange(opt.value)}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-all ${
+              selected
+                ? 'border-forest bg-forest/10 text-forest'
+                : 'border-gray-200 bg-white text-mid-gray hover:border-gray-300'
+            }`}
+          >
+            <Icon size={16} />
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function ReminderSettings() {
   const [settings, setSettings] = useState<ReminderSettingsType>(loadSettings);
 
-  const update = (field: keyof ReminderSettingsType, value: boolean | number) => {
-    setSettings((prev) => ({ ...prev, [field]: value }));
+  const update = (field: keyof ReminderSettingsType, value: boolean | number | ReminderChannel) => {
+    setSettings((prev) => {
+      const next = { ...prev, [field]: value };
+      // Sync enabled state with channel
+      if (field === 'shiftReminderChannel') next.shiftRemindersEnabled = value !== 'none';
+      if (field === 'appointmentReminderChannel') next.appointmentRemindersEnabled = value !== 'none';
+      if (field === 'overdueInvoiceReminderChannel') next.overdueInvoiceRemindersEnabled = value !== 'none';
+      return next;
+    });
   };
 
   const handleSave = () => {
@@ -40,28 +98,24 @@ export default function ReminderSettings() {
     <div className="space-y-6">
       {/* Shift Reminders */}
       <div className="card p-5">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-violet-50 text-violet-600">
-              <Clock size={20} />
-            </div>
-            <div>
-              <h3 className="text-base font-semibold text-charcoal">Shift Reminders</h3>
-              <p className="text-xs text-mid-gray">Send SMS to carers before their scheduled shifts</p>
-            </div>
+        <div className="flex items-center gap-3 mb-3">
+          <div className="p-2 rounded-lg bg-violet-50 text-violet-600">
+            <Clock size={20} />
           </div>
-          <label className="relative inline-flex items-center cursor-pointer">
-            <input
-              type="checkbox"
-              checked={settings.shiftRemindersEnabled}
-              onChange={(e) => update('shiftRemindersEnabled', e.target.checked)}
-              className="sr-only peer"
-            />
-            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-forest/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-forest"></div>
-          </label>
+          <div>
+            <h3 className="text-base font-semibold text-charcoal">Shift Reminders</h3>
+            <p className="text-xs text-mid-gray">Notify carers before their scheduled shifts</p>
+          </div>
         </div>
-        {settings.shiftRemindersEnabled && (
-          <div className="ml-11">
+
+        <label className="block text-sm font-medium text-charcoal mb-1">How should we send reminders?</label>
+        <ChannelSelector
+          value={settings.shiftReminderChannel}
+          onChange={(v) => update('shiftReminderChannel', v)}
+        />
+
+        {settings.shiftReminderChannel !== 'none' && (
+          <div className="mt-4">
             <label className="block text-sm font-medium text-charcoal mb-1">Send reminder</label>
             <div className="flex items-center gap-2">
               <select
@@ -83,28 +137,24 @@ export default function ReminderSettings() {
 
       {/* Appointment Reminders */}
       <div className="card p-5">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-blue-50 text-blue-600">
-              <MessageSquare size={20} />
-            </div>
-            <div>
-              <h3 className="text-base font-semibold text-charcoal">Appointment Reminders</h3>
-              <p className="text-xs text-mid-gray">Send SMS to clients or their nominated contacts before appointments</p>
-            </div>
+        <div className="flex items-center gap-3 mb-3">
+          <div className="p-2 rounded-lg bg-blue-50 text-blue-600">
+            <MessageSquare size={20} />
           </div>
-          <label className="relative inline-flex items-center cursor-pointer">
-            <input
-              type="checkbox"
-              checked={settings.appointmentRemindersEnabled}
-              onChange={(e) => update('appointmentRemindersEnabled', e.target.checked)}
-              className="sr-only peer"
-            />
-            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-forest/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-forest"></div>
-          </label>
+          <div>
+            <h3 className="text-base font-semibold text-charcoal">Appointment Reminders</h3>
+            <p className="text-xs text-mid-gray">Notify clients or their nominated contacts before appointments</p>
+          </div>
         </div>
-        {settings.appointmentRemindersEnabled && (
-          <div className="ml-11">
+
+        <label className="block text-sm font-medium text-charcoal mb-1">How should we send reminders?</label>
+        <ChannelSelector
+          value={settings.appointmentReminderChannel}
+          onChange={(v) => update('appointmentReminderChannel', v)}
+        />
+
+        {settings.appointmentReminderChannel !== 'none' && (
+          <div className="mt-4">
             <label className="block text-sm font-medium text-charcoal mb-1">Send reminder</label>
             <div className="flex items-center gap-2">
               <select
@@ -121,7 +171,7 @@ export default function ReminderSettings() {
               <span className="text-sm text-mid-gray">before appointment</span>
             </div>
             <p className="text-xs text-mid-gray mt-2">
-              SMS will be sent to the client's nominated contact number if set, otherwise to the client's phone.
+              Sent to the client's nominated contact if set, otherwise to the client directly.
             </p>
           </div>
         )}
@@ -129,28 +179,24 @@ export default function ReminderSettings() {
 
       {/* Overdue Invoice Reminders */}
       <div className="card p-5">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-amber-50 text-amber-600">
-              <FileText size={20} />
-            </div>
-            <div>
-              <h3 className="text-base font-semibold text-charcoal">Overdue Invoice Reminders</h3>
-              <p className="text-xs text-mid-gray">Send SMS to plan managers or nominated contacts for overdue invoices</p>
-            </div>
+        <div className="flex items-center gap-3 mb-3">
+          <div className="p-2 rounded-lg bg-amber-50 text-amber-600">
+            <FileText size={20} />
           </div>
-          <label className="relative inline-flex items-center cursor-pointer">
-            <input
-              type="checkbox"
-              checked={settings.overdueInvoiceRemindersEnabled}
-              onChange={(e) => update('overdueInvoiceRemindersEnabled', e.target.checked)}
-              className="sr-only peer"
-            />
-            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-forest/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-forest"></div>
-          </label>
+          <div>
+            <h3 className="text-base font-semibold text-charcoal">Overdue Invoice Reminders</h3>
+            <p className="text-xs text-mid-gray">Notify plan managers or nominated contacts for overdue invoices</p>
+          </div>
         </div>
-        {settings.overdueInvoiceRemindersEnabled && (
-          <div className="ml-11">
+
+        <label className="block text-sm font-medium text-charcoal mb-1">How should we send reminders?</label>
+        <ChannelSelector
+          value={settings.overdueInvoiceReminderChannel}
+          onChange={(v) => update('overdueInvoiceReminderChannel', v)}
+        />
+
+        {settings.overdueInvoiceReminderChannel !== 'none' && (
+          <div className="mt-4">
             <label className="block text-sm font-medium text-charcoal mb-1">Send reminder after</label>
             <div className="flex items-center gap-2">
               <select
@@ -166,7 +212,7 @@ export default function ReminderSettings() {
               <span className="text-sm text-mid-gray">past due date</span>
             </div>
             <p className="text-xs text-mid-gray mt-2">
-              Reminders sent to the client's nominated contact (e.g. plan manager, family member).
+              Sent to the client's nominated contact (e.g. plan manager, family member).
             </p>
           </div>
         )}

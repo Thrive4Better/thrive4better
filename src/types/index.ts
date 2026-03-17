@@ -450,11 +450,16 @@ export interface RemittanceAdvice {
 
 // ── Reminder Settings ──
 
+export type ReminderChannel = 'none' | 'sms' | 'email' | 'both';
+
 export interface ReminderSettings {
   shiftRemindersEnabled: boolean;
   shiftReminderHoursBefore: number;
+  shiftReminderChannel: ReminderChannel;
   appointmentRemindersEnabled: boolean;
   appointmentReminderHoursBefore: number;
+  appointmentReminderChannel: ReminderChannel;
   overdueInvoiceRemindersEnabled: boolean;
   overdueInvoiceReminderDaysAfter: number;
+  overdueInvoiceReminderChannel: ReminderChannel;
 }

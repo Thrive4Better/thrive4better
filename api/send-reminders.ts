@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
+import { Resend } from 'resend';
 
 const supabaseUrl = process.env.VITE_SUPABASE_URL!;
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -7,6 +8,8 @@ const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID;
 const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
 const twilioMessagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID;
 const twilioPhoneNumber = process.env.TWILIO_PHONE_NUMBER;
+const resendApiKey = process.env.RESEND_API_KEY;
+const fromEmail = process.env.RESEND_FROM_EMAIL || 'reminders@info.thrive4better.com';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -15,6 +18,7 @@ const corsHeaders = {
 };
 
 type ReminderType = 'shift' | 'appointment' | 'overdue_invoice';
+type ReminderChannel = 'none' | 'sms' | 'email' | 'both';
 
 // ── Message Templates ──
 
@@ -31,6 +35,77 @@ const TEMPLATES = {
   overdue_invoice: (clientName: string, invoiceNumber: string, amount: string, daysPastDue: number) => {
     return `Hi, this is a friendly reminder that invoice ${invoiceNumber} for ${clientName} ($${amount}) is ${daysPastDue} day(s) overdue. Please arrange payment at your earliest convenience. - Thrive 4 Better`;
   },
+};
+
+// ── Email Templates ──
+
+const EMAIL_TEMPLATES = {
+  shift: (carerName: string, clientName: string, time: string, date: string, location: string) => ({
+    subject: `Shift Reminder - ${clientName} on ${date}`,
+    html: `
+      <div style="font-family: 'Poppins', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: #2D5A3D; color: white; padding: 20px; border-radius: 8px 8px 0 0; text-align: center;">
+          <h1 style="margin: 0; font-size: 20px;">Thrive 4 Better</h1>
+          <p style="margin: 4px 0 0; font-size: 12px; opacity: 0.85;">Shift Reminder</p>
+        </div>
+        <div style="border: 1px solid #e5e7eb; border-top: none; padding: 24px; border-radius: 0 0 8px 8px;">
+          <p>Hi ${carerName},</p>
+          <p>This is a reminder that you have an upcoming shift:</p>
+          <div style="background: #f9fafb; border-radius: 8px; padding: 16px; margin: 16px 0;">
+            <p style="margin: 4px 0;"><strong>Client:</strong> ${clientName}</p>
+            <p style="margin: 4px 0;"><strong>Date:</strong> ${date}</p>
+            <p style="margin: 4px 0;"><strong>Time:</strong> ${time}</p>
+            ${location ? `<p style="margin: 4px 0;"><strong>Location:</strong> ${location}</p>` : ''}
+          </div>
+          <p>Please ensure you arrive on time. Contact the office if you have any questions.</p>
+          <p style="color: #6b7280; font-size: 12px; margin-top: 24px;">Thrive 4 Better | ABN 15 694 748 297</p>
+        </div>
+      </div>`,
+  }),
+  appointment: (clientName: string, time: string, date: string) => ({
+    subject: `Appointment Reminder - ${clientName} on ${date}`,
+    html: `
+      <div style="font-family: 'Poppins', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: #2D5A3D; color: white; padding: 20px; border-radius: 8px 8px 0 0; text-align: center;">
+          <h1 style="margin: 0; font-size: 20px;">Thrive 4 Better</h1>
+          <p style="margin: 4px 0 0; font-size: 12px; opacity: 0.85;">Appointment Reminder</p>
+        </div>
+        <div style="border: 1px solid #e5e7eb; border-top: none; padding: 24px; border-radius: 0 0 8px 8px;">
+          <p>Hi,</p>
+          <p>This is a friendly reminder of an upcoming appointment:</p>
+          <div style="background: #f9fafb; border-radius: 8px; padding: 16px; margin: 16px 0;">
+            <p style="margin: 4px 0;"><strong>Participant:</strong> ${clientName}</p>
+            <p style="margin: 4px 0;"><strong>Date:</strong> ${date}</p>
+            <p style="margin: 4px 0;"><strong>Time:</strong> ${time}</p>
+          </div>
+          <p>If you need to reschedule, please contact us as soon as possible.</p>
+          <p style="color: #6b7280; font-size: 12px; margin-top: 24px;">Thrive 4 Better | ABN 15 694 748 297</p>
+        </div>
+      </div>`,
+  }),
+  overdue_invoice: (clientName: string, invoiceNumber: string, amount: string, daysPastDue: number, dueDate: string) => ({
+    subject: `Payment Reminder - Invoice ${invoiceNumber} Overdue`,
+    html: `
+      <div style="font-family: 'Poppins', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: #2D5A3D; color: white; padding: 20px; border-radius: 8px 8px 0 0; text-align: center;">
+          <h1 style="margin: 0; font-size: 20px;">Thrive 4 Better</h1>
+          <p style="margin: 4px 0 0; font-size: 12px; opacity: 0.85;">Payment Reminder</p>
+        </div>
+        <div style="border: 1px solid #e5e7eb; border-top: none; padding: 24px; border-radius: 0 0 8px 8px;">
+          <p>Hi,</p>
+          <p>This is a friendly reminder regarding an outstanding invoice:</p>
+          <div style="background: #f9fafb; border-radius: 8px; padding: 16px; margin: 16px 0;">
+            <p style="margin: 4px 0;"><strong>Invoice:</strong> ${invoiceNumber}</p>
+            <p style="margin: 4px 0;"><strong>Client:</strong> ${clientName}</p>
+            <p style="margin: 4px 0;"><strong>Amount:</strong> $${amount}</p>
+            <p style="margin: 4px 0;"><strong>Due Date:</strong> ${dueDate}</p>
+            <p style="margin: 4px 0; color: #dc2626;"><strong>${daysPastDue} day(s) overdue</strong></p>
+          </div>
+          <p>Please arrange payment at your earliest convenience. If payment has already been made, please disregard this reminder.</p>
+          <p style="color: #6b7280; font-size: 12px; margin-top: 24px;">Thrive 4 Better | ABN 15 694 748 297<br>20 Zelkova Cct, Fraser Rise VIC 3336</p>
+        </div>
+      </div>`,
+  }),
 };
 
 function formatTime12(time: string): string {
@@ -50,10 +125,7 @@ async function sendSms(to: string, message: string): Promise<{ success: boolean;
   const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`;
   const credentials = Buffer.from(`${twilioAccountSid}:${twilioAuthToken}`).toString('base64');
 
-  const body = new URLSearchParams({
-    To: to,
-    Body: message,
-  });
+  const body = new URLSearchParams({ To: to, Body: message });
   if (twilioMessagingServiceSid) {
     body.set('MessagingServiceSid', twilioMessagingServiceSid);
   } else {
@@ -81,8 +153,92 @@ async function sendSms(to: string, message: string): Promise<{ success: boolean;
   }
 }
 
+async function sendEmail(to: string, subject: string, html: string): Promise<{ success: boolean; error?: string; simulated?: boolean }> {
+  if (!resendApiKey) {
+    return { success: false, simulated: true, error: 'Resend not configured' };
+  }
+
+  try {
+    const resend = new Resend(resendApiKey);
+    const { error } = await resend.emails.send({
+      from: `Thrive 4 Better <${fromEmail}>`,
+      to,
+      subject,
+      html,
+    });
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
+  }
+}
+
+interface SendResult {
+  id: string;
+  smsSent?: boolean;
+  emailSent?: boolean;
+  smsSimulated?: boolean;
+  emailSimulated?: boolean;
+  status: string;
+  errors?: string[];
+  to?: string;
+  message?: string;
+}
+
+async function sendViaChannel(
+  channel: ReminderChannel,
+  phone: string | undefined,
+  email: string | undefined,
+  smsMessage: string,
+  emailSubject: string,
+  emailHtml: string,
+  id: string,
+): Promise<{ sent: number; failed: number; simulated: number; result: SendResult }> {
+  let sent = 0, failed = 0, simulated = 0;
+  const result: SendResult = { id, status: 'ok', errors: [] };
+
+  const shouldSms = channel === 'sms' || channel === 'both';
+  const shouldEmail = channel === 'email' || channel === 'both';
+
+  if (shouldSms) {
+    if (!phone) {
+      result.errors!.push('No phone number for SMS');
+      failed++;
+    } else {
+      const smsResult = await sendSms(phone, smsMessage);
+      if (smsResult.simulated) { simulated++; result.smsSimulated = true; }
+      else if (smsResult.success) { sent++; result.smsSent = true; }
+      else { failed++; result.errors!.push(`SMS: ${smsResult.error}`); }
+    }
+  }
+
+  if (shouldEmail) {
+    if (!email) {
+      result.errors!.push('No email address');
+      failed++;
+    } else {
+      const emailResult = await sendEmail(email, emailSubject, emailHtml);
+      if (emailResult.simulated) { simulated++; result.emailSimulated = true; }
+      else if (emailResult.success) { sent++; result.emailSent = true; }
+      else { failed++; result.errors!.push(`Email: ${emailResult.error}`); }
+    }
+  }
+
+  if (!shouldSms && !shouldEmail) {
+    result.status = 'skipped';
+  } else if (result.errors!.length > 0) {
+    result.status = sent > 0 ? 'partial' : 'failed';
+  } else {
+    result.status = simulated > 0 ? 'simulated' : 'sent';
+  }
+
+  return { sent, failed, simulated, result };
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return res.status(200).setHeader('Access-Control-Allow-Origin', '*')
       .setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
@@ -90,15 +246,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .end();
   }
 
-  Object.entries(corsHeaders).forEach(([key, value]) => {
-    res.setHeader(key, value);
-  });
+  Object.entries(corsHeaders).forEach(([key, value]) => res.setHeader(key, value));
 
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  // Extract and verify JWT
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'Missing or invalid Authorization header' });
@@ -113,13 +266,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { shiftIds, type = 'shift' } = req.body || {};
+    const { shiftIds, type = 'shift', channel = 'sms' } = req.body || {};
     const reminderType: ReminderType = type;
+    const reminderChannel: ReminderChannel = channel;
 
-    let sent = 0;
-    let failed = 0;
-    let simulated = 0;
-    const results: any[] = [];
+    if (reminderChannel === 'none') {
+      return res.status(200).json({ success: true, message: 'Reminders disabled for this type', sent: 0, failed: 0 });
+    }
+
+    let totalSent = 0;
+    let totalFailed = 0;
+    let totalSimulated = 0;
+    const results: SendResult[] = [];
 
     // ── Overdue Invoice Reminders ──
     if (reminderType === 'overdue_invoice') {
@@ -147,30 +305,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       for (const invoice of overdueInvoices) {
         const client = clientsMap.get(invoice.client_id);
         if (!client) {
-          results.push({ invoiceId: invoice.id, status: 'skipped', reason: 'Client not found' });
-          failed++;
+          results.push({ id: invoice.id, status: 'skipped', errors: ['Client not found'] });
+          totalFailed++;
           continue;
         }
 
-        // Use nominated contact phone if available, otherwise plan manager phone, then client phone
         const recipientPhone = client.nominated_contact_phone || client.plan_manager_phone || client.phone;
-        if (!recipientPhone) {
-          results.push({ invoiceId: invoice.id, status: 'skipped', reason: 'No phone number' });
-          failed++;
-          continue;
-        }
-
+        const recipientEmail = client.nominated_contact_email || client.plan_manager_email || client.email;
         const clientName = `${client.first_name || ''} ${client.last_name || ''}`.trim() || 'your client';
         const daysPastDue = Math.floor((new Date(today).getTime() - new Date(invoice.due_date).getTime()) / 86400000);
-        const message = TEMPLATES.overdue_invoice(clientName, invoice.invoice_number || invoice.id, invoice.total?.toString() || '0', daysPastDue);
+        const invNumber = invoice.invoice_number || invoice.id;
+        const amount = invoice.total?.toString() || '0';
 
-        const smsResult = await sendSms(recipientPhone, message);
-        if (smsResult.simulated) { simulated++; results.push({ invoiceId: invoice.id, status: 'simulated', to: recipientPhone, message }); }
-        else if (smsResult.success) { sent++; results.push({ invoiceId: invoice.id, status: 'sent', to: recipientPhone }); }
-        else { failed++; results.push({ invoiceId: invoice.id, status: 'failed', error: smsResult.error }); }
+        const smsMsg = TEMPLATES.overdue_invoice(clientName, invNumber, amount, daysPastDue);
+        const emailTpl = EMAIL_TEMPLATES.overdue_invoice(clientName, invNumber, amount, daysPastDue, invoice.due_date);
+
+        const { sent, failed, simulated, result } = await sendViaChannel(
+          reminderChannel, recipientPhone, recipientEmail, smsMsg, emailTpl.subject, emailTpl.html, invoice.id
+        );
+        totalSent += sent; totalFailed += failed; totalSimulated += simulated;
+        results.push(result);
       }
 
-      return res.status(200).json({ success: true, message: `Overdue invoice reminders: ${sent} sent, ${simulated} simulated, ${failed} failed`, sent, simulated, failed, results });
+      return res.status(200).json({
+        success: true,
+        message: `Overdue invoice reminders: ${totalSent} sent, ${totalSimulated} simulated, ${totalFailed} failed`,
+        sent: totalSent, simulated: totalSimulated, failed: totalFailed, results,
+      });
     }
 
     // ── Appointment Reminders (to clients/nominees) ──
@@ -203,27 +364,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const client = clientsMap.get(shift.client_id);
         if (!client) continue;
 
-        // Send to nominated contact if set, otherwise client phone
         const recipientPhone = client.nominated_contact_phone || client.phone;
-        if (!recipientPhone) {
-          results.push({ shiftId: shift.id, status: 'skipped', reason: 'No phone number' });
-          failed++;
-          continue;
-        }
-
+        const recipientEmail = client.nominated_contact_email || client.email;
         const clientName = `${client.first_name || ''} ${client.last_name || ''}`.trim() || 'the participant';
-        const message = TEMPLATES.appointment(clientName, formatTime12(shift.start_time || ''), tomorrowStr);
+        const smsMsg = TEMPLATES.appointment(clientName, formatTime12(shift.start_time || ''), tomorrowStr);
+        const emailTpl = EMAIL_TEMPLATES.appointment(clientName, formatTime12(shift.start_time || ''), tomorrowStr);
 
-        const smsResult = await sendSms(recipientPhone, message);
-        if (smsResult.simulated) { simulated++; results.push({ shiftId: shift.id, status: 'simulated', to: recipientPhone, message }); }
-        else if (smsResult.success) { sent++; results.push({ shiftId: shift.id, status: 'sent', to: recipientPhone }); }
-        else { failed++; results.push({ shiftId: shift.id, status: 'failed', error: smsResult.error }); }
+        const { sent, failed, simulated, result } = await sendViaChannel(
+          reminderChannel, recipientPhone, recipientEmail, smsMsg, emailTpl.subject, emailTpl.html, shift.id
+        );
+        totalSent += sent; totalFailed += failed; totalSimulated += simulated;
+        results.push(result);
       }
 
-      return res.status(200).json({ success: true, message: `Appointment reminders: ${sent} sent, ${simulated} simulated, ${failed} failed`, sent, simulated, failed, results });
+      return res.status(200).json({
+        success: true,
+        message: `Appointment reminders: ${totalSent} sent, ${totalSimulated} simulated, ${totalFailed} failed`,
+        sent: totalSent, simulated: totalSimulated, failed: totalFailed, results,
+      });
     }
 
-    // ── Shift Reminders (to carers) ── (default behavior)
+    // ── Shift Reminders (to carers) ──
     let shifts: any[];
 
     if (shiftIds && Array.isArray(shiftIds) && shiftIds.length > 0) {
@@ -254,19 +415,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (shifts.length === 0) {
-      return res.status(200).json({
-        success: true,
-        message: 'No shifts found to send reminders for',
-        sent: 0,
-        failed: 0,
-      });
+      return res.status(200).json({ success: true, message: 'No shifts found to send reminders for', sent: 0, failed: 0 });
     }
 
-    // Gather unique carer and client IDs
     const carerIds = [...new Set(shifts.map((s: any) => s.carer_id).filter(Boolean))];
     const clientIds = [...new Set(shifts.map((s: any) => s.client_id).filter(Boolean))];
 
-    // Fetch carers and clients
     const [carersResult, clientsResult] = await Promise.all([
       carerIds.length > 0
         ? supabase.from('carers').select('*').in('id', carerIds)
@@ -283,9 +437,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const carer = carersMap.get(shift.carer_id);
       const client = clientsMap.get(shift.client_id);
 
-      if (!carer || !carer.phone) {
-        results.push({ shiftId: shift.id, status: 'skipped', reason: 'No carer phone number' });
-        failed++;
+      if (!carer) {
+        results.push({ id: shift.id, status: 'skipped', errors: ['Carer not found'] });
+        totalFailed++;
         continue;
       }
 
@@ -295,30 +449,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         : 'your client';
       const location = client?.address || '';
       const startTime = shift.start_time || '';
+      const tomorrowStr = new Date(Date.now() + 86400000).toISOString().split('T')[0];
 
-      const message = TEMPLATES.shift(carerFirstName, clientName, formatTime12(startTime), location);
+      const smsMsg = TEMPLATES.shift(carerFirstName, clientName, formatTime12(startTime), location);
+      const emailTpl = EMAIL_TEMPLATES.shift(carerFirstName, clientName, formatTime12(startTime), tomorrowStr, location);
 
-      const smsResult = await sendSms(carer.phone, message);
-
-      if (smsResult.simulated) {
-        simulated++;
-        results.push({ shiftId: shift.id, status: 'simulated', to: carer.phone, message });
-      } else if (smsResult.success) {
-        sent++;
-        results.push({ shiftId: shift.id, status: 'sent', to: carer.phone });
-      } else {
-        failed++;
-        results.push({ shiftId: shift.id, status: 'failed', error: smsResult.error });
-      }
+      const { sent, failed, simulated, result } = await sendViaChannel(
+        reminderChannel, carer.phone, carer.email, smsMsg, emailTpl.subject, emailTpl.html, shift.id
+      );
+      totalSent += sent; totalFailed += failed; totalSimulated += simulated;
+      results.push(result);
     }
 
     return res.status(200).json({
       success: true,
-      message: `Processed ${shifts.length} shift(s): ${sent} sent, ${simulated} simulated, ${failed} failed`,
-      sent,
-      simulated,
-      failed,
-      results,
+      message: `Processed ${shifts.length} shift(s): ${totalSent} sent, ${totalSimulated} simulated, ${totalFailed} failed`,
+      sent: totalSent, simulated: totalSimulated, failed: totalFailed, results,
     });
   } catch (error) {
     console.error('Unexpected error:', error);
