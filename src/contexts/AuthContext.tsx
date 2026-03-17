@@ -3,6 +3,15 @@ import type { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import type { UserRole } from '@/types';
 
+// ── Logging utility ──
+const LOG_PREFIX = '[Auth]';
+function log(...args: unknown[]) {
+  console.log(LOG_PREFIX, ...args);
+}
+function logError(...args: unknown[]) {
+  console.error(LOG_PREFIX, ...args);
+}
+
 interface UserProfile {
   id: string;
   fullName: string;
@@ -29,13 +38,22 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 async function fetchProfile(userId: string): Promise<UserProfile | null> {
+  log('Fetching profile for user:', userId);
   const { data, error } = await supabase
     .from('profiles')
     .select('id, full_name, role, carer_id, avatar_url, phone')
     .eq('id', userId)
     .single();
 
-  if (error || !data) return null;
+  if (error) {
+    logError('Profile fetch failed:', error.message, error.code, error.details);
+    return null;
+  }
+  if (!data) {
+    logError('Profile fetch returned no data for user:', userId);
+    return null;
+  }
+  log('Profile loaded:', { role: data.role, fullName: data.full_name });
   return {
     id: data.id,
     fullName: data.full_name,
@@ -57,55 +75,99 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setProfile(null);
       return;
     }
-    const p = await fetchProfile(u.id);
-    setProfile(p);
+    try {
+      const p = await fetchProfile(u.id);
+      setProfile(p);
+    } catch (err) {
+      logError('loadProfile crashed:', err);
+      setProfile(null);
+    }
   };
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data: { session: s } }) => {
-      setSession(s);
-      setUser(s?.user ?? null);
-      await loadProfile(s?.user ?? null);
-      setLoading(false);
-    });
+    let mounted = true;
+    log('Initializing auth...');
+
+    supabase.auth
+      .getSession()
+      .then(async ({ data: { session: s }, error }) => {
+        if (!mounted) return;
+        if (error) {
+          logError('getSession error:', error.message);
+          setLoading(false);
+          return;
+        }
+        log('Session found:', !!s, s?.user?.email ?? 'no user');
+        setSession(s);
+        setUser(s?.user ?? null);
+        await loadProfile(s?.user ?? null);
+        if (mounted) setLoading(false);
+      })
+      .catch((err) => {
+        logError('getSession crashed:', err);
+        if (mounted) setLoading(false);
+      });
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
+    } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+      log('Auth state changed:', event, newSession?.user?.email ?? 'no user');
+      if (!mounted) return;
       setSession(newSession);
       setUser(newSession?.user ?? null);
       await loadProfile(newSession?.user ?? null);
-      setLoading(false);
+      if (mounted) setLoading(false);
     });
 
     return () => {
+      mounted = false;
       subscription.unsubscribe();
     };
   }, []);
 
   const signIn = async (email: string, password: string) => {
+    log('Signing in:', email);
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw error;
+    if (error) {
+      logError('Sign in failed:', error.message);
+      throw error;
+    }
+    log('Sign in successful');
   };
 
   const signUp = async (email: string, password: string, fullName: string) => {
+    log('Signing up:', email);
     const { error } = await supabase.auth.signUp({
       email,
       password,
       options: { data: { full_name: fullName } },
     });
-    if (error) throw error;
+    if (error) {
+      logError('Sign up failed:', error.message);
+      throw error;
+    }
+    log('Sign up successful');
   };
 
   const verifyOtp = async (email: string, token: string) => {
+    log('Verifying OTP for:', email);
     const { error } = await supabase.auth.verifyOtp({ email, token, type: 'signup' });
-    if (error) throw error;
+    if (error) {
+      logError('OTP verification failed:', error.message);
+      throw error;
+    }
+    log('OTP verified');
   };
 
   const signOut = async () => {
+    log('Signing out');
     const { error } = await supabase.auth.signOut();
-    if (error) throw error;
+    if (error) {
+      logError('Sign out failed:', error.message);
+      throw error;
+    }
     setProfile(null);
+    log('Signed out');
   };
 
   const refreshProfile = async () => {

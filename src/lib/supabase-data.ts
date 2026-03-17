@@ -775,24 +775,39 @@ export async function fetchAllData(): Promise<{
   complianceRecords: ComplianceRecord[];
   claimSubmissions: ClaimSubmission[];
 }> {
+  console.log('[Store] Fetching all data...');
+
+  // Fetch each independently so one failure doesn't block everything
+  const safelyFetch = async <T>(name: string, fn: () => Promise<T[]>): Promise<T[]> => {
+    try {
+      const result = await fn();
+      console.log(`[Store] ${name}: ${result.length} records`);
+      return result;
+    } catch (err) {
+      console.error(`[Store] Failed to fetch ${name}:`, err);
+      return [];
+    }
+  };
+
   const [
     clients, carers, shifts, invoices, carePlans, ndisRates, documents,
     sessionNotes, incidentReports, timesheets, complianceRecords, claimSubmissions,
   ] = await Promise.all([
-    fetchClients(),
-    fetchCarers(),
-    fetchShifts(),
-    fetchInvoices(),
-    fetchCarePlans(),
-    fetchNdisRates(),
-    fetchDocuments(),
-    fetchSessionNotes(),
-    fetchIncidentReports(),
-    fetchTimesheets(),
-    fetchComplianceRecords(),
-    fetchClaimSubmissions(),
+    safelyFetch('clients', fetchClients),
+    safelyFetch('carers', fetchCarers),
+    safelyFetch('shifts', fetchShifts),
+    safelyFetch('invoices', fetchInvoices),
+    safelyFetch('carePlans', fetchCarePlans),
+    safelyFetch('ndisRates', fetchNdisRates),
+    safelyFetch('documents', fetchDocuments),
+    safelyFetch('sessionNotes', fetchSessionNotes),
+    safelyFetch('incidentReports', fetchIncidentReports),
+    safelyFetch('timesheets', fetchTimesheets),
+    safelyFetch('complianceRecords', fetchComplianceRecords),
+    safelyFetch('claimSubmissions', fetchClaimSubmissions),
   ]);
 
+  console.log('[Store] All data loaded');
   return {
     clients, carers, shifts, invoices, carePlans, ndisRates, documents,
     sessionNotes, incidentReports, timesheets, complianceRecords, claimSubmissions,
