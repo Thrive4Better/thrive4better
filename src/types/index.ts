@@ -237,11 +237,22 @@ export interface SessionNote {
   shiftId: string;
   carerId: string;
   clientId: string;
+  date: string;
+  supportWorker: string;
+  startTime: string;
+  finishTime: string;
+  activityCompleted: string;
   content: string;
   participantMood: ParticipantMood;
+  supportProvided: string;
+  incidentsOrConcerns: string;
+  transportKms: number;
+  additionalObservations: string;
   goalsAddressed: string[];
   followUpRequired: boolean;
   followUpNotes: string;
+  invoiceId?: string;
+  aiSummary?: string;
   createdAt: string;
   updatedAt: string;
 }

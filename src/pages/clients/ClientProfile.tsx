@@ -13,8 +13,8 @@ import {
   Edit2, Save, X, ChevronRight, Trash2, Sparkles, Plus,
   ChevronUp, ChevronDown, Loader2, FileCode, FileType, MessageSquare, Tag,
 } from 'lucide-react';
-import type { CarePlan, CarePlanGoal, AlliedHealthContact, Shift, CarePlanSection, CarePlanSectionType, ModularCarePlan, ShiftNote, ShiftNoteType } from '@/types';
-import { format, parseISO, isWithinInterval } from 'date-fns';
+import type { CarePlan, CarePlanGoal, AlliedHealthContact, Shift, CarePlanSection, CarePlanSectionType, ModularCarePlan, ShiftNote, ShiftNoteType, SessionNote, ParticipantMood } from '@/types';
+import { format, parseISO, isWithinInterval, differenceInDays } from 'date-fns';
 import { supabase } from '@/lib/supabase';
 import toast from 'react-hot-toast';
 import { pdf } from '@react-pdf/renderer';
@@ -77,16 +77,25 @@ function getDefaultSectionContent(type: CarePlanSectionType): string {
 
 // ── Tab types ───────────────────────────────────────────────────────────────
 
-type TabId = 'overview' | 'care-plan' | 'shifts' | 'shift-notes' | 'invoices' | 'documents' | 'reviews';
+type TabId = 'overview' | 'care-plan' | 'shifts' | 'session-notes' | 'invoices' | 'documents' | 'reviews';
 
 const TABS: { id: TabId; label: string; icon: typeof User }[] = [
   { id: 'overview', label: 'Overview', icon: User },
   { id: 'care-plan', label: 'Care Plan', icon: Heart },
   { id: 'shifts', label: 'Shifts', icon: Calendar },
-  { id: 'shift-notes', label: 'Shift Notes', icon: MessageSquare },
+  { id: 'session-notes', label: 'Session Notes', icon: MessageSquare },
   { id: 'invoices', label: 'Invoices', icon: FileText },
   { id: 'documents', label: 'Documents', icon: FolderOpen },
   { id: 'reviews', label: 'Reviews', icon: Target },
+];
+
+// ── Mood config ──
+const MOOD_OPTIONS: { value: ParticipantMood; label: string; emoji: string; color: string }[] = [
+  { value: 'great', label: 'Great', emoji: '😊', color: 'bg-green-100 text-green-700' },
+  { value: 'good', label: 'Good', emoji: '🙂', color: 'bg-blue-100 text-blue-700' },
+  { value: 'neutral', label: 'Neutral', emoji: '😐', color: 'bg-gray-100 text-gray-700' },
+  { value: 'low', label: 'Low', emoji: '😔', color: 'bg-amber-100 text-amber-700' },
+  { value: 'distressed', label: 'Distressed', emoji: '😰', color: 'bg-red-100 text-red-700' },
 ];
 
 // ── File type icon helper ───────────────────────────────────────────────────
@@ -113,6 +122,7 @@ export default function ClientProfile() {
     getCarerById, updateCarePlan, updateClient, addDocument, deleteDocument,
     getReviewsByClient, activityReviews,
     getShiftNotesByClient, shiftNotes: allShiftNotes,
+    getSessionNotesByClient, addSessionNote, deleteSessionNote, carers,
   } = useStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -305,6 +315,15 @@ export default function ClientProfile() {
 
   const totalAllocated = client.supportCategories.reduce((s, c) => s + c.allocatedBudget, 0);
   const totalSpent = client.supportCategories.reduce((s, c) => s + c.spentAmount, 0);
+
+  // Plan period tracking
+  const planStart = client.planStartDate ? parseISO(client.planStartDate) : null;
+  const planEnd = client.planEndDate ? parseISO(client.planEndDate) : null;
+  const planTotalDays = planStart && planEnd ? differenceInDays(planEnd, planStart) : 0;
+  const planElapsedDays = planStart ? differenceInDays(new Date(), planStart) : 0;
+  const planElapsedPct = planTotalDays > 0 ? Math.min(Math.max((planElapsedDays / planTotalDays) * 100, 0), 100) : 0;
+  const budgetUsedPct = totalAllocated > 0 ? (totalSpent / totalAllocated) * 100 : 0;
+  const planDaysRemaining = planEnd ? differenceInDays(planEnd, new Date()) : null;
 
   // ── Care plan edit handlers ───────────────────────────────────────────────
 
@@ -507,6 +526,7 @@ export default function ClientProfile() {
                 <span className="text-mid-gray">Total Spent</span>
                 <span className="font-semibold text-charcoal">{formatCurrency(totalSpent)}</span>
               </div>
+              {/* Budget utilisation bar */}
               <div className="w-full bg-sage-pale rounded-full h-2.5">
                 <div
                   className={cn(
@@ -515,15 +535,69 @@ export default function ClientProfile() {
                       ? 'bg-burgundy'
                       : 'bg-forest'
                   )}
-                  style={{ width: `${totalAllocated > 0 ? Math.min((totalSpent / totalAllocated) * 100, 100) : 0}%` }}
+                  style={{ width: `${totalAllocated > 0 ? Math.min(budgetUsedPct, 100) : 0}%` }}
                 />
               </div>
               <p className="text-xs text-mid-gray mt-1">
                 {totalAllocated > 0
-                  ? `${((totalSpent / totalAllocated) * 100).toFixed(1)}% utilised`
+                  ? `${budgetUsedPct.toFixed(1)}% utilised`
                   : 'No budget allocated'}
               </p>
             </div>
+
+            {/* Plan Period Tracking */}
+            {planStart && planEnd && (
+              <div className="border-t border-sage-pale pt-4">
+                <div className="flex items-center justify-between text-sm mb-1">
+                  <span className="text-mid-gray">Plan Period</span>
+                  <span className="font-medium text-charcoal text-xs">
+                    {format(planStart, 'dd MMM yyyy')} &ndash; {format(planEnd, 'dd MMM yyyy')}
+                  </span>
+                </div>
+                {/* Plan period elapsed bar */}
+                <div className="w-full bg-sage-pale rounded-full h-2.5 mt-2">
+                  <div
+                    className="h-2.5 rounded-full transition-all bg-sky-500"
+                    style={{ width: `${planElapsedPct}%` }}
+                  />
+                </div>
+                <p className="text-xs text-mid-gray mt-1">
+                  {planElapsedPct.toFixed(1)}% of plan period elapsed
+                  {planDaysRemaining !== null && planDaysRemaining > 0 && (
+                    <> &middot; {planDaysRemaining} days remaining</>
+                  )}
+                  {planDaysRemaining !== null && planDaysRemaining <= 0 && (
+                    <> &middot; Plan period ended</>
+                  )}
+                </p>
+
+                {/* Spending vs Time comparison */}
+                {totalAllocated > 0 && (
+                  <div className={cn(
+                    'mt-3 p-2.5 rounded-lg text-xs font-medium flex items-center gap-2',
+                    budgetUsedPct > planElapsedPct + 10
+                      ? 'bg-burgundy/10 text-burgundy'
+                      : budgetUsedPct < planElapsedPct - 10
+                        ? 'bg-amber-50 text-amber-700'
+                        : 'bg-forest/10 text-forest'
+                  )}>
+                    {budgetUsedPct > planElapsedPct + 10 ? (
+                      <AlertTriangle size={14} />
+                    ) : (
+                      <Clock size={14} />
+                    )}
+                    <span>
+                      {budgetUsedPct.toFixed(1)}% budget used | {planElapsedPct.toFixed(1)}% of plan elapsed
+                      {budgetUsedPct > planElapsedPct + 10
+                        ? ' — Spending ahead of schedule'
+                        : budgetUsedPct < planElapsedPct - 10
+                          ? ' — Under-utilising budget'
+                          : ' — Spending on track'}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -1397,58 +1471,486 @@ export default function ClientProfile() {
     );
   }
 
-  // ── Shift Notes tab ──
+  // ── Session Notes tab ──
 
-  const NOTE_TYPE_COLORS: Record<ShiftNoteType, string> = {
-    general: 'bg-sage-pale text-forest',
-    progress: 'bg-blue-100 text-blue-700',
-    incident: 'bg-red-100 text-red-700',
-    medication: 'bg-purple-100 text-purple-700',
-    behaviour: 'bg-amber-100 text-amber-700',
-  };
+  const [showSessionNoteForm, setShowSessionNoteForm] = useState(false);
+  const [sessionNoteForm, setSessionNoteForm] = useState({
+    date: format(new Date(), 'yyyy-MM-dd'),
+    supportWorker: '',
+    startTime: '',
+    finishTime: '',
+    activityCompleted: '',
+    participantMood: 'neutral' as ParticipantMood,
+    supportProvided: '',
+    incidentsOrConcerns: '',
+    transportKms: 0,
+    additionalObservations: '',
+    shiftId: '',
+    invoiceId: '',
+  });
+  const [savingSessionNote, setSavingSessionNote] = useState(false);
 
-  function renderShiftNotes() {
-    const clientShiftNotes = getShiftNotesByClient(id ?? '');
-    const sortedNotes = [...clientShiftNotes].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+  function resetSessionNoteForm() {
+    setSessionNoteForm({
+      date: format(new Date(), 'yyyy-MM-dd'),
+      supportWorker: '',
+      startTime: '',
+      finishTime: '',
+      activityCompleted: '',
+      participantMood: 'neutral',
+      supportProvided: '',
+      incidentsOrConcerns: '',
+      transportKms: 0,
+      additionalObservations: '',
+      shiftId: '',
+      invoiceId: '',
+    });
+  }
 
-    if (sortedNotes.length === 0) {
-      return (
-        <EmptyState
-          icon={MessageSquare}
-          title="No shift notes"
-          description="Shift notes will appear here once they are recorded during shifts."
-        />
-      );
+  async function handleSaveSessionNote() {
+    if (!sessionNoteForm.date || !sessionNoteForm.supportWorker) {
+      toast.error('Date and Support Worker are required');
+      return;
     }
+    setSavingSessionNote(true);
+    try {
+      // Build content from the structured fields for backward compat
+      const contentParts = [
+        sessionNoteForm.activityCompleted && `Activity: ${sessionNoteForm.activityCompleted}`,
+        sessionNoteForm.supportProvided && `Support Provided: ${sessionNoteForm.supportProvided}`,
+        sessionNoteForm.incidentsOrConcerns && `Incidents/Concerns: ${sessionNoteForm.incidentsOrConcerns}`,
+        sessionNoteForm.additionalObservations && `Observations: ${sessionNoteForm.additionalObservations}`,
+      ].filter(Boolean).join('\n\n');
+
+      await addSessionNote({
+        clientId: id ?? '',
+        carerId: sessionNoteForm.shiftId ? (shifts.find(s => s.id === sessionNoteForm.shiftId)?.carerId ?? '') : '',
+        shiftId: sessionNoteForm.shiftId || '',
+        date: sessionNoteForm.date,
+        supportWorker: sessionNoteForm.supportWorker,
+        startTime: sessionNoteForm.startTime,
+        finishTime: sessionNoteForm.finishTime,
+        activityCompleted: sessionNoteForm.activityCompleted,
+        content: contentParts || sessionNoteForm.activityCompleted,
+        participantMood: sessionNoteForm.participantMood,
+        supportProvided: sessionNoteForm.supportProvided,
+        incidentsOrConcerns: sessionNoteForm.incidentsOrConcerns,
+        transportKms: sessionNoteForm.transportKms,
+        additionalObservations: sessionNoteForm.additionalObservations,
+        goalsAddressed: [],
+        followUpRequired: !!sessionNoteForm.incidentsOrConcerns,
+        followUpNotes: sessionNoteForm.incidentsOrConcerns || '',
+        invoiceId: sessionNoteForm.invoiceId || undefined,
+      });
+      toast.success('Session note saved');
+      resetSessionNoteForm();
+      setShowSessionNoteForm(false);
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to save session note');
+    } finally {
+      setSavingSessionNote(false);
+    }
+  }
+
+  function generateAiSummary(notes: SessionNote[]): string {
+    if (notes.length === 0) return '';
+    const recent = notes.slice(0, 10); // last 10 notes
+    const moodCounts: Record<string, number> = {};
+    let totalKms = 0;
+    let incidentCount = 0;
+    const activities = new Set<string>();
+    const workers = new Set<string>();
+
+    recent.forEach((n) => {
+      moodCounts[n.participantMood] = (moodCounts[n.participantMood] || 0) + 1;
+      totalKms += n.transportKms || 0;
+      if (n.incidentsOrConcerns?.trim()) incidentCount++;
+      if (n.activityCompleted?.trim()) activities.add(n.activityCompleted.trim().split(/[,.;]/)[0].trim());
+      if (n.supportWorker?.trim()) workers.add(n.supportWorker.trim());
+    });
+
+    const dominantMood = Object.entries(moodCounts).sort((a, b) => b[1] - a[1])[0];
+    const moodLabel = dominantMood ? MOOD_OPTIONS.find(m => m.value === dominantMood[0])?.label || dominantMood[0] : 'N/A';
+
+    const parts: string[] = [];
+    parts.push(`${recent.length} session${recent.length !== 1 ? 's' : ''} recorded${notes.length > 10 ? ` (${notes.length} total)` : ''}.`);
+    parts.push(`Predominant mood: ${moodLabel}.`);
+    if (activities.size > 0) parts.push(`Activities include: ${[...activities].slice(0, 5).join(', ')}.`);
+    if (workers.size > 0) parts.push(`Support workers: ${[...workers].slice(0, 4).join(', ')}.`);
+    if (totalKms > 0) parts.push(`Total transport: ${totalKms} km.`);
+    if (incidentCount > 0) parts.push(`${incidentCount} session${incidentCount !== 1 ? 's' : ''} had incidents or concerns flagged.`);
+    if (incidentCount === 0) parts.push('No incidents or concerns reported.');
+
+    return parts.join(' ');
+  }
+
+  function renderSessionNotes() {
+    const clientSessionNotes = getSessionNotesByClient(id ?? '');
+    const sortedNotes = [...clientSessionNotes].sort((a, b) =>
+      (b.date || b.createdAt).localeCompare(a.date || a.createdAt)
+    );
+    const aiSummary = generateAiSummary(sortedNotes);
 
     return (
-      <div className="space-y-3">
-        <p className="text-sm text-mid-gray">{sortedNotes.length} shift note{sortedNotes.length !== 1 ? 's' : ''} for this participant</p>
-        {sortedNotes.map((note) => {
-          const carer = getCarerById(note.carerId);
-          const shift = shifts.find((s) => s.id === note.shiftId);
-          return (
-            <div key={note.id} className="card p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 flex-wrap mb-1">
-                    <span className={cn('text-xs px-2 py-0.5 rounded-full font-medium', NOTE_TYPE_COLORS[note.noteType] || 'bg-sage-pale text-forest')}>
-                      {note.noteType.charAt(0).toUpperCase() + note.noteType.slice(1)}
-                    </span>
-                    <span className="text-xs text-mid-gray">{formatDateTime(note.timestamp)}</span>
-                  </div>
-                  <p className="text-xs text-mid-gray mb-2">
-                    Carer: <span className="font-medium text-charcoal">{carer ? `${carer.firstName} ${carer.lastName}` : 'Unknown'}</span>
-                    {shift && (
-                      <> | Shift: {formatDate(shift.date)} {formatTime(shift.startTime)}-{formatTime(shift.endTime)} ({shift.serviceType})</>
-                    )}
-                  </p>
-                  <p className="text-sm text-charcoal whitespace-pre-wrap">{note.content}</p>
+      <div className="space-y-4">
+        {/* AI Summary */}
+        {sortedNotes.length > 0 && (
+          <div className="card p-4 bg-gradient-to-r from-forest/5 to-sage-pale/30 border-forest/20">
+            <div className="flex items-center gap-2 mb-2">
+              <Sparkles size={16} className="text-forest" />
+              <h3 className="text-sm font-semibold text-forest">AI Session Summary</h3>
+            </div>
+            <p className="text-sm text-charcoal leading-relaxed">{aiSummary}</p>
+          </div>
+        )}
+
+        {/* Header with add button */}
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-mid-gray">
+            {sortedNotes.length} session note{sortedNotes.length !== 1 ? 's' : ''} for this participant
+          </p>
+          <button
+            onClick={() => setShowSessionNoteForm(true)}
+            className="btn-primary flex items-center gap-2 text-sm"
+          >
+            <Plus size={16} />
+            Add Session Note
+          </button>
+        </div>
+
+        {/* Add Session Note Form Modal */}
+        {showSessionNoteForm && (
+          <div className="card p-5 border-2 border-forest/30 bg-white">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-semibold text-charcoal">New Session Note</h3>
+              <button onClick={() => { setShowSessionNoteForm(false); resetSessionNoteForm(); }} className="btn-ghost p-1">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Date */}
+              <div>
+                <label className="block text-xs font-medium text-charcoal mb-1">Date *</label>
+                <input
+                  type="date"
+                  value={sessionNoteForm.date}
+                  onChange={(e) => setSessionNoteForm({ ...sessionNoteForm, date: e.target.value })}
+                  className="input-field w-full"
+                />
+              </div>
+
+              {/* Support Worker */}
+              <div>
+                <label className="block text-xs font-medium text-charcoal mb-1">Support Worker *</label>
+                <select
+                  value={sessionNoteForm.supportWorker}
+                  onChange={(e) => setSessionNoteForm({ ...sessionNoteForm, supportWorker: e.target.value })}
+                  className="input-field w-full"
+                >
+                  <option value="">Select support worker...</option>
+                  {carers.filter(c => c.status === 'Active').map((c) => (
+                    <option key={c.id} value={`${c.firstName} ${c.lastName}`}>
+                      {c.firstName} {c.lastName}
+                    </option>
+                  ))}
+                  <option value="__other">Other (type below)</option>
+                </select>
+                {sessionNoteForm.supportWorker === '__other' && (
+                  <input
+                    type="text"
+                    placeholder="Enter worker name..."
+                    className="input-field w-full mt-1"
+                    onChange={(e) => setSessionNoteForm({ ...sessionNoteForm, supportWorker: e.target.value })}
+                  />
+                )}
+              </div>
+
+              {/* Start Time */}
+              <div>
+                <label className="block text-xs font-medium text-charcoal mb-1">Start Time</label>
+                <input
+                  type="time"
+                  value={sessionNoteForm.startTime}
+                  onChange={(e) => setSessionNoteForm({ ...sessionNoteForm, startTime: e.target.value })}
+                  className="input-field w-full"
+                />
+              </div>
+
+              {/* Finish Time */}
+              <div>
+                <label className="block text-xs font-medium text-charcoal mb-1">Finish Time</label>
+                <input
+                  type="time"
+                  value={sessionNoteForm.finishTime}
+                  onChange={(e) => setSessionNoteForm({ ...sessionNoteForm, finishTime: e.target.value })}
+                  className="input-field w-full"
+                />
+              </div>
+
+              {/* Activity Completed */}
+              <div className="md:col-span-2">
+                <label className="block text-xs font-medium text-charcoal mb-1">Activity Completed</label>
+                <textarea
+                  value={sessionNoteForm.activityCompleted}
+                  onChange={(e) => setSessionNoteForm({ ...sessionNoteForm, activityCompleted: e.target.value })}
+                  className="input-field w-full"
+                  rows={2}
+                  placeholder="Describe the activity completed during this session..."
+                />
+              </div>
+
+              {/* Participant Mood / Behaviour */}
+              <div className="md:col-span-2">
+                <label className="block text-xs font-medium text-charcoal mb-1">Participant Mood / Behaviour</label>
+                <div className="flex flex-wrap gap-2">
+                  {MOOD_OPTIONS.map((mood) => (
+                    <button
+                      key={mood.value}
+                      type="button"
+                      onClick={() => setSessionNoteForm({ ...sessionNoteForm, participantMood: mood.value })}
+                      className={cn(
+                        'px-3 py-1.5 rounded-full text-xs font-medium border transition-all',
+                        sessionNoteForm.participantMood === mood.value
+                          ? `${mood.color} border-current ring-2 ring-current/20`
+                          : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
+                      )}
+                    >
+                      {mood.emoji} {mood.label}
+                    </button>
+                  ))}
                 </div>
               </div>
+
+              {/* Support Provided */}
+              <div className="md:col-span-2">
+                <label className="block text-xs font-medium text-charcoal mb-1">Support Provided</label>
+                <textarea
+                  value={sessionNoteForm.supportProvided}
+                  onChange={(e) => setSessionNoteForm({ ...sessionNoteForm, supportProvided: e.target.value })}
+                  className="input-field w-full"
+                  rows={2}
+                  placeholder="Describe the support provided to the participant..."
+                />
+              </div>
+
+              {/* Incidents or Concerns */}
+              <div className="md:col-span-2">
+                <label className="block text-xs font-medium text-charcoal mb-1">Any Incidents or Concerns</label>
+                <textarea
+                  value={sessionNoteForm.incidentsOrConcerns}
+                  onChange={(e) => setSessionNoteForm({ ...sessionNoteForm, incidentsOrConcerns: e.target.value })}
+                  className="input-field w-full"
+                  rows={2}
+                  placeholder="Record any incidents or concerns (leave blank if none)..."
+                />
+              </div>
+
+              {/* Transport Kms */}
+              <div>
+                <label className="block text-xs font-medium text-charcoal mb-1">Transport KMs</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.1"
+                  value={sessionNoteForm.transportKms || ''}
+                  onChange={(e) => setSessionNoteForm({ ...sessionNoteForm, transportKms: parseFloat(e.target.value) || 0 })}
+                  className="input-field w-full"
+                  placeholder="0"
+                />
+              </div>
+
+              {/* Link to Shift */}
+              <div>
+                <label className="block text-xs font-medium text-charcoal mb-1">Link to Shift (optional)</label>
+                <select
+                  value={sessionNoteForm.shiftId}
+                  onChange={(e) => setSessionNoteForm({ ...sessionNoteForm, shiftId: e.target.value })}
+                  className="input-field w-full"
+                >
+                  <option value="">No linked shift</option>
+                  {shifts.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 20).map((s) => {
+                    const carer = getCarerById(s.carerId);
+                    return (
+                      <option key={s.id} value={s.id}>
+                        {formatDate(s.date)} {formatTime(s.startTime)}-{formatTime(s.endTime)} ({carer ? `${carer.firstName} ${carer.lastName}` : 'Unknown'})
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              {/* Link to Invoice */}
+              <div>
+                <label className="block text-xs font-medium text-charcoal mb-1">Link to Invoice (optional)</label>
+                <select
+                  value={sessionNoteForm.invoiceId}
+                  onChange={(e) => setSessionNoteForm({ ...sessionNoteForm, invoiceId: e.target.value })}
+                  className="input-field w-full"
+                >
+                  <option value="">No linked invoice</option>
+                  {invoices.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 20).map((inv) => (
+                    <option key={inv.id} value={inv.id}>
+                      {inv.invoiceNumber} - {formatDate(inv.createdAt)} ({formatCurrency(inv.total)})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Additional Observations */}
+              <div className="md:col-span-2">
+                <label className="block text-xs font-medium text-charcoal mb-1">Additional Observations</label>
+                <textarea
+                  value={sessionNoteForm.additionalObservations}
+                  onChange={(e) => setSessionNoteForm({ ...sessionNoteForm, additionalObservations: e.target.value })}
+                  className="input-field w-full"
+                  rows={2}
+                  placeholder="Any additional observations or comments..."
+                />
+              </div>
             </div>
-          );
-        })}
+
+            {/* Save / Cancel */}
+            <div className="flex justify-end gap-3 mt-4 pt-4 border-t border-sage-pale">
+              <button
+                onClick={() => { setShowSessionNoteForm(false); resetSessionNoteForm(); }}
+                className="btn-ghost text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveSessionNote}
+                disabled={savingSessionNote}
+                className="btn-primary flex items-center gap-2 text-sm"
+              >
+                {savingSessionNote ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                Save Note
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Notes list */}
+        {sortedNotes.length === 0 && !showSessionNoteForm ? (
+          <EmptyState
+            icon={MessageSquare}
+            title="No session notes"
+            description="Session notes will appear here. Click 'Add Session Note' to record a new session."
+          />
+        ) : (
+          <div className="space-y-3">
+            {sortedNotes.map((note) => {
+              const linkedShift = note.shiftId ? shifts.find((s) => s.id === note.shiftId) : null;
+              const linkedInvoice = note.invoiceId ? invoices.find((i) => i.id === note.invoiceId) : null;
+              const moodInfo = MOOD_OPTIONS.find((m) => m.value === note.participantMood);
+              const carer = note.carerId ? getCarerById(note.carerId) : null;
+
+              return (
+                <div key={note.id} className="card p-4 hover:shadow-md transition-shadow">
+                  {/* Header row */}
+                  <div className="flex items-start justify-between gap-3 mb-3">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <span className="text-sm font-semibold text-charcoal">
+                        {note.date ? formatDate(note.date) : formatDate(note.createdAt)}
+                      </span>
+                      {moodInfo && (
+                        <span className={cn('text-xs px-2 py-0.5 rounded-full font-medium', moodInfo.color)}>
+                          {moodInfo.emoji} {moodInfo.label}
+                        </span>
+                      )}
+                      {note.incidentsOrConcerns?.trim() && (
+                        <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-red-100 text-red-700">
+                          <AlertTriangle size={10} className="inline mr-1" />
+                          Incident flagged
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      onClick={async () => {
+                        if (confirm('Delete this session note?')) {
+                          try {
+                            await deleteSessionNote(note.id);
+                            toast.success('Session note deleted');
+                          } catch (err: any) {
+                            toast.error(err.message || 'Failed to delete');
+                          }
+                        }
+                      }}
+                      className="btn-ghost p-1 text-mid-gray hover:text-red-500"
+                      title="Delete note"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+
+                  {/* Details grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                    <div>
+                      <span className="text-xs text-mid-gray">Support Worker:</span>
+                      <p className="font-medium text-charcoal">{note.supportWorker || (carer ? `${carer.firstName} ${carer.lastName}` : 'Not specified')}</p>
+                    </div>
+                    {(note.startTime || note.finishTime) && (
+                      <div>
+                        <span className="text-xs text-mid-gray">Time:</span>
+                        <p className="font-medium text-charcoal">
+                          {note.startTime ? formatTime(note.startTime) : '?'} - {note.finishTime ? formatTime(note.finishTime) : '?'}
+                        </p>
+                      </div>
+                    )}
+                    {note.activityCompleted && (
+                      <div className="md:col-span-2">
+                        <span className="text-xs text-mid-gray">Activity Completed:</span>
+                        <p className="text-charcoal whitespace-pre-wrap">{note.activityCompleted}</p>
+                      </div>
+                    )}
+                    {note.supportProvided && (
+                      <div className="md:col-span-2">
+                        <span className="text-xs text-mid-gray">Support Provided:</span>
+                        <p className="text-charcoal whitespace-pre-wrap">{note.supportProvided}</p>
+                      </div>
+                    )}
+                    {note.incidentsOrConcerns && (
+                      <div className="md:col-span-2">
+                        <span className="text-xs text-mid-gray text-red-600">Incidents / Concerns:</span>
+                        <p className="text-charcoal whitespace-pre-wrap">{note.incidentsOrConcerns}</p>
+                      </div>
+                    )}
+                    {note.transportKms > 0 && (
+                      <div>
+                        <span className="text-xs text-mid-gray">Transport KMs:</span>
+                        <p className="font-medium text-charcoal">{note.transportKms} km</p>
+                      </div>
+                    )}
+                    {note.additionalObservations && (
+                      <div className="md:col-span-2">
+                        <span className="text-xs text-mid-gray">Additional Observations:</span>
+                        <p className="text-charcoal whitespace-pre-wrap">{note.additionalObservations}</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Linked shift / invoice */}
+                  {(linkedShift || linkedInvoice) && (
+                    <div className="flex items-center gap-3 mt-3 pt-3 border-t border-sage-pale flex-wrap">
+                      {linkedShift && (
+                        <span className="text-xs text-mid-gray flex items-center gap-1">
+                          <Calendar size={12} />
+                          Shift: {formatDate(linkedShift.date)} {formatTime(linkedShift.startTime)}-{formatTime(linkedShift.endTime)}
+                        </span>
+                      )}
+                      {linkedInvoice && (
+                        <span className="text-xs text-mid-gray flex items-center gap-1">
+                          <FileText size={12} />
+                          Invoice: {linkedInvoice.invoiceNumber} ({formatCurrency(linkedInvoice.total)})
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     );
   }
@@ -1457,7 +1959,7 @@ export default function ClientProfile() {
     overview: renderOverview,
     'care-plan': renderCarePlan,
     shifts: renderShifts,
-    'shift-notes': renderShiftNotes,
+    'session-notes': renderSessionNotes,
     invoices: renderInvoices,
     documents: renderDocuments,
     reviews: renderReviews,
