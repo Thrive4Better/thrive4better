@@ -8,6 +8,7 @@ import { pdf } from '@react-pdf/renderer';
 
 import { useStore } from '@/stores/useStore';
 import { formatCurrency, formatDate, cn } from '@/lib/utils';
+import { notifyContractorInvoiceApproved, notifyContractorInvoiceRejected } from '@/lib/notifications';
 import StatusBadge from '@/components/ui/StatusBadge';
 import EmptyState from '@/components/ui/EmptyState';
 import ContractorInvoicePdf from '@/pages/staff/ContractorInvoicePdf';
@@ -61,6 +62,15 @@ export default function ContractorInvoices() {
       approvedBy: 'Admin',
     });
     toast.success(`Invoice ${invoice.invoiceNumber} approved`);
+    // Notify the contractor
+    const carer = carers.find(c => c.id === invoice.carerId);
+    if (carer?.email) {
+      notifyContractorInvoiceApproved(
+        carer.email, carer.phone, carer.name,
+        invoice.invoiceNumber, formatCurrency(invoice.total),
+        new Date().toLocaleDateString('en-AU')
+      ).catch(() => {});
+    }
   };
 
   const handleReject = (invoice: ContractorInvoice) => {
@@ -75,6 +85,15 @@ export default function ContractorInvoices() {
     setRejectingId(null);
     setRejectionReason('');
     toast.success(`Invoice ${invoice.invoiceNumber} rejected`);
+    // Notify the contractor
+    const carer = carers.find(c => c.id === invoice.carerId);
+    if (carer?.email) {
+      notifyContractorInvoiceRejected(
+        carer.email, carer.phone, carer.name,
+        invoice.invoiceNumber, formatCurrency(invoice.total),
+        rejectionReason.trim()
+      ).catch(() => {});
+    }
   };
 
   const handleDownloadPdf = async (invoice: ContractorInvoice) => {

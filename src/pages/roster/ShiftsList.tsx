@@ -4,6 +4,7 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { format, parseISO, isWithinInterval } from 'date-fns';
+import { notifyShiftAssigned, notifyShiftConfirmed, notifyShiftUpdated, notifyShiftCancelled } from '@/lib/notifications';
 import {
   ArrowUpDown,
   ArrowUp,
@@ -727,9 +728,31 @@ export default function ShiftsList() {
             if (editingShift) {
               updateShift(editingShift.id, data);
               toast.success('Shift updated');
+              // Send notification if carer assigned
+              const carer = data.carerId ? getCarerById(data.carerId) : null;
+              const client = data.clientId ? getClientById(data.clientId) : null;
+              if (carer?.email) {
+                notifyShiftUpdated(
+                  carer.email, carer.phone, carer.name,
+                  client?.name || 'Client', data.date || editingShift.date,
+                  data.startTime || editingShift.startTime, data.endTime || editingShift.endTime,
+                  'Shift details have been updated'
+                ).catch(() => {});
+              }
             } else {
               addShift(data);
               toast.success('Shift created');
+              // Send assignment notification
+              const carer = data.carerId ? getCarerById(data.carerId) : null;
+              const client = data.clientId ? getClientById(data.clientId) : null;
+              if (carer?.email) {
+                notifyShiftAssigned(
+                  carer.email, carer.phone, carer.name,
+                  client?.name || 'Client', data.date,
+                  data.startTime, data.endTime, data.serviceType,
+                  client?.address, data.notes
+                ).catch(() => {});
+              }
             }
             closeDrawer();
           }}

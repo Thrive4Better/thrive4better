@@ -289,3 +289,340 @@ ${ctaButton(ctaLabel, ctaUrl)}`;
 
   return { subject: emailSubject, preview, html: wrapInLayout(emailSubject, preview, body) };
 }
+
+// ─── Roster / Shift Assignment ──────────────────────────────────────────────
+export function shiftAssignedEmail(
+  carerName: string,
+  clientName: string,
+  date: string,
+  startTime: string,
+  endTime: string,
+  serviceType: string,
+  address: string,
+  notes: string
+): EmailTemplate {
+  const subject = `New Shift Assigned - ${clientName} on ${date}`;
+  const preview = `You've been assigned a new shift with ${clientName} on ${date}.`;
+
+  const detailRows = [
+    infoRow('Client', clientName),
+    infoRow('Date', date),
+    infoRow('Time', `${startTime} - ${endTime}`),
+    serviceType ? infoRow('Service Type', serviceType) : '',
+    address ? infoRow('Location', address) : '',
+    notes ? infoRow('Notes', notes) : '',
+  ].filter(Boolean).join('');
+
+  const body = `${h1('New shift assigned')}
+${p(`Hi ${carerName},`)}
+${p("You've been assigned a new shift. Please review the details below and confirm your availability.")}
+${infoBox(detailRows)}
+${ctaButton('View roster', `${BASE_URL}/roster`)}
+${smallText("Please contact us immediately if you're unable to attend this shift.")}`;
+
+  return { subject, preview, html: wrapInLayout(subject, preview, body) };
+}
+
+// ─── Shift Cancelled ────────────────────────────────────────────────────────
+export function shiftCancelledEmail(
+  carerName: string,
+  clientName: string,
+  date: string,
+  startTime: string,
+  endTime: string,
+  reason: string
+): EmailTemplate {
+  const subject = `Shift Cancelled - ${clientName} on ${date}`;
+  const preview = `Your shift with ${clientName} on ${date} has been cancelled.`;
+
+  const detailRows = [
+    infoRow('Client', clientName),
+    infoRow('Date', date),
+    infoRow('Time', `${startTime} - ${endTime}`),
+    reason ? infoRow('Reason', reason) : '',
+  ].filter(Boolean).join('');
+
+  const body = `${h1('Shift cancelled')}
+${p(`Hi ${carerName},`)}
+${p("We wanted to let you know that the following shift has been cancelled:")}
+${infoBox(detailRows)}
+${p("Your roster has been updated accordingly. If you have any questions, please contact us.")}
+${ctaButton('View roster', `${BASE_URL}/roster`)}`;
+
+  return { subject, preview, html: wrapInLayout(subject, preview, body) };
+}
+
+// ─── Shift Updated / Rescheduled ────────────────────────────────────────────
+export function shiftUpdatedEmail(
+  carerName: string,
+  clientName: string,
+  date: string,
+  startTime: string,
+  endTime: string,
+  changeDescription: string
+): EmailTemplate {
+  const subject = `Shift Updated - ${clientName} on ${date}`;
+  const preview = `Your shift with ${clientName} has been updated.`;
+
+  const detailRows = [
+    infoRow('Client', clientName),
+    infoRow('Date', date),
+    infoRow('Time', `${startTime} - ${endTime}`),
+    changeDescription ? infoRow('What changed', changeDescription) : '',
+  ].filter(Boolean).join('');
+
+  const body = `${h1('Shift updated')}
+${p(`Hi ${carerName},`)}
+${p("Your shift details have been updated. Please review the new information below:")}
+${infoBox(detailRows)}
+${ctaButton('View roster', `${BASE_URL}/roster`)}
+${smallText("If you have any concerns about these changes, please contact us as soon as possible.")}`;
+
+  return { subject, preview, html: wrapInLayout(subject, preview, body) };
+}
+
+// ─── Roster Published / Weekly Schedule ─────────────────────────────────────
+export function weeklyRosterEmail(
+  carerName: string,
+  weekStartDate: string,
+  weekEndDate: string,
+  shiftSummaries: { date: string; time: string; client: string }[]
+): EmailTemplate {
+  const subject = `Your Roster - Week of ${weekStartDate}`;
+  const preview = `Your roster for the week of ${weekStartDate} is ready.`;
+
+  const shiftRows = shiftSummaries.map(s =>
+    `<tr>
+      <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:14px;color:${DARK_TEXT};font-family:${FONT_STACK};">${s.date}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:14px;color:${DARK_TEXT};font-family:${FONT_STACK};">${s.time}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;font-size:14px;color:${DARK_TEXT};font-family:${FONT_STACK};">${s.client}</td>
+    </tr>`
+  ).join('');
+
+  const shiftTable = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:16px 0 24px;border:1px solid #e8e8e8;border-radius:6px;overflow:hidden;">
+    <tr style="background-color:${FOREST};">
+      <th style="padding:10px 12px;text-align:left;font-size:13px;font-weight:600;color:#FFFFFF;font-family:${FONT_STACK};">Date</th>
+      <th style="padding:10px 12px;text-align:left;font-size:13px;font-weight:600;color:#FFFFFF;font-family:${FONT_STACK};">Time</th>
+      <th style="padding:10px 12px;text-align:left;font-size:13px;font-weight:600;color:#FFFFFF;font-family:${FONT_STACK};">Client</th>
+    </tr>
+    ${shiftRows}
+  </table>`;
+
+  const body = `${h1('Your weekly roster')}
+${p(`Hi ${carerName},`)}
+${p(`Here's your schedule for <strong>${weekStartDate}</strong> to <strong>${weekEndDate}</strong>:`)}
+${shiftSummaries.length > 0 ? shiftTable : infoBox(p('No shifts scheduled for this week.', 14))}
+${p(`<strong>${shiftSummaries.length} shift${shiftSummaries.length !== 1 ? 's' : ''}</strong> scheduled this week.`)}
+${ctaButton('View full roster', `${BASE_URL}/roster`)}
+${smallText("If you need to swap or adjust a shift, please contact your coordinator as soon as possible.")}`;
+
+  return { subject, preview, html: wrapInLayout(subject, preview, body) };
+}
+
+// ─── Client Appointment Reminder ────────────────────────────────────────────
+export function clientAppointmentReminderEmail(
+  recipientName: string,
+  clientName: string,
+  date: string,
+  time: string,
+  carerName: string,
+  serviceType: string
+): EmailTemplate {
+  const subject = `Appointment Reminder - ${clientName} on ${date}`;
+  const preview = `Reminder: ${clientName} has an appointment on ${date} at ${time}.`;
+
+  const detailRows = [
+    infoRow('Participant', clientName),
+    infoRow('Date', date),
+    infoRow('Time', time),
+    carerName ? infoRow('Support Worker', carerName) : '',
+    serviceType ? infoRow('Service', serviceType) : '',
+  ].filter(Boolean).join('');
+
+  const body = `${h1('Appointment reminder')}
+${p(`Hi ${recipientName},`)}
+${p(`This is a friendly reminder of an upcoming appointment:`)}
+${infoBox(detailRows)}
+${p("If you need to reschedule, please contact us at least 24 hours in advance.")}
+${ctaButton('View appointments', `${BASE_URL}/roster`)}
+${smallText("Contact us if you have any questions about this appointment.")}`;
+
+  return { subject, preview, html: wrapInLayout(subject, preview, body) };
+}
+
+// ─── Payslip Ready ──────────────────────────────────────────────────────────
+export function payslipReadyEmail(
+  staffName: string,
+  payPeriod: string,
+  netPay: string,
+  payDate: string
+): EmailTemplate {
+  const subject = `Your Payslip is Ready - ${payPeriod}`;
+  const preview = `Your payslip for ${payPeriod} is ready to view.`;
+
+  const body = `${h1('Payslip ready')}
+${p(`Hi ${staffName},`)}
+${p(`Your payslip for the period <strong>${payPeriod}</strong> is now available.`)}
+${infoBox(`${infoRow('Pay Period', payPeriod)}${infoRow('Net Pay', netPay)}${infoRow('Pay Date', payDate)}`)}
+${ctaButton('View payslip', `${BASE_URL}/payroll`)}
+${smallText("If you have any questions about your pay, please contact the office.")}`;
+
+  return { subject, preview, html: wrapInLayout(subject, preview, body) };
+}
+
+// ─── Contractor Invoice Approved ────────────────────────────────────────────
+export function contractorInvoiceApprovedEmail(
+  contractorName: string,
+  invoiceNumber: string,
+  amount: string,
+  approvedDate: string
+): EmailTemplate {
+  const subject = `Invoice ${invoiceNumber} Approved`;
+  const preview = `Your invoice ${invoiceNumber} has been approved for payment.`;
+
+  const body = `${h1('Invoice approved')}
+${p(`Hi ${contractorName},`)}
+${p("Great news! Your submitted invoice has been approved for payment.")}
+${infoBox(`${infoRow('Invoice', invoiceNumber)}${infoRow('Amount', amount)}${infoRow('Approved', approvedDate)}`)}
+${p("Payment will be processed in the next pay run. You'll receive a remittance advice when payment is made.")}
+${ctaButton('View invoices', `${BASE_URL}/staff/invoices`)}`;
+
+  return { subject, preview, html: wrapInLayout(subject, preview, body) };
+}
+
+// ─── Contractor Invoice Rejected ────────────────────────────────────────────
+export function contractorInvoiceRejectedEmail(
+  contractorName: string,
+  invoiceNumber: string,
+  amount: string,
+  reason: string
+): EmailTemplate {
+  const subject = `Invoice ${invoiceNumber} Requires Attention`;
+  const preview = `Your invoice ${invoiceNumber} needs revision.`;
+
+  const body = `${h1('Invoice needs revision')}
+${p(`Hi ${contractorName},`)}
+${p("Your submitted invoice requires some changes before it can be approved.")}
+${infoBox(`${infoRow('Invoice', invoiceNumber)}${infoRow('Amount', amount)}${reason ? infoRow('Feedback', reason) : ''}`)}
+${p("Please review the feedback and resubmit your invoice.")}
+${ctaButton('Resubmit invoice', `${BASE_URL}/staff/invoices`)}`;
+
+  return { subject, preview, html: wrapInLayout(subject, preview, body) };
+}
+
+// ─── Onboarding Welcome ─────────────────────────────────────────────────────
+export function onboardingEmail(
+  firstName: string,
+  role: string,
+  loginUrl: string
+): EmailTemplate {
+  const subject = `Welcome to the Thrive 4 Better Team`;
+  const preview = `Welcome ${firstName}! Your onboarding documents are ready.`;
+
+  const body = `${h1(`Welcome to the team, ${firstName}!`)}
+${p("We're thrilled to have you join Thrive 4 Better. Your account has been set up and there are a few things to get you started.")}
+${infoBox(`${infoRow('Role', role)}${infoRow('Organisation', 'Thrive 4 Better')}`)}
+${p("<strong>Next steps:</strong>")}
+<ol style="font-size:15px;color:${DARK_TEXT};line-height:1.8;font-family:${FONT_STACK};margin:0 0 16px;padding-left:20px;">
+  <li>Log in to your account using the button below</li>
+  <li>Complete your onboarding checklist</li>
+  <li>Review and sign the required company documents</li>
+  <li>Set up your profile with your details and availability</li>
+</ol>
+${ctaButton('Get started', loginUrl)}
+${smallText("If you need any help, reach out to your coordinator or reply to this email.")}`;
+
+  return { subject, preview, html: wrapInLayout(subject, preview, body) };
+}
+
+// ─── Overdue Invoice Reminder (branded) ─────────────────────────────────────
+export function overdueInvoiceReminderEmail(
+  recipientName: string,
+  clientName: string,
+  invoiceNumber: string,
+  amount: string,
+  dueDate: string,
+  daysPastDue: number
+): EmailTemplate {
+  const subject = `Payment Reminder - Invoice ${invoiceNumber} Overdue`;
+  const preview = `Invoice ${invoiceNumber} for ${clientName} is ${daysPastDue} days overdue.`;
+
+  const body = `${h1('Payment reminder')}
+${p(`Hi ${recipientName},`)}
+${p("This is a friendly reminder regarding an outstanding invoice:")}
+${infoBox(`${infoRow('Invoice', invoiceNumber)}${infoRow('Participant', clientName)}${infoRow('Amount', `$${amount}`)}${infoRow('Due Date', dueDate)}
+<p style="font-size:14px;color:#dc2626;margin:4px 0 0;line-height:1.6;font-family:${FONT_STACK};"><strong>${daysPastDue} day(s) overdue</strong></p>`)}
+${p("Please arrange payment at your earliest convenience. If payment has already been made, please disregard this reminder.")}
+${ctaButton('View invoice', `${BASE_URL}/invoices`)}
+${smallText("For payment queries, reply to this email or contact us at hello@thrive4better.com.au.")}`;
+
+  return { subject, preview, html: wrapInLayout(subject, preview, body) };
+}
+
+// ─── Shift Reminder (branded) ───────────────────────────────────────────────
+export function shiftReminderEmail(
+  carerName: string,
+  clientName: string,
+  date: string,
+  startTime: string,
+  endTime: string,
+  address: string
+): EmailTemplate {
+  const subject = `Shift Reminder - ${clientName} tomorrow`;
+  const preview = `Reminder: You have a shift with ${clientName} tomorrow at ${startTime}.`;
+
+  const detailRows = [
+    infoRow('Client', clientName),
+    infoRow('Date', date),
+    infoRow('Time', `${startTime} - ${endTime}`),
+    address ? infoRow('Location', address) : '',
+  ].filter(Boolean).join('');
+
+  const body = `${h1('Shift reminder')}
+${p(`Hi ${carerName},`)}
+${p("Just a reminder about your upcoming shift:")}
+${infoBox(detailRows)}
+${p("Please arrive 5 minutes early and ensure you have everything you need for the session.")}
+${ctaButton('View roster', `${BASE_URL}/roster`)}
+${smallText("Contact us immediately if you're unable to attend.")}`;
+
+  return { subject, preview, html: wrapInLayout(subject, preview, body) };
+}
+
+// ─── New Client Added ───────────────────────────────────────────────────────
+export function newClientAddedEmail(
+  adminName: string,
+  clientName: string,
+  ndisNumber: string,
+  fundingType: string
+): EmailTemplate {
+  const subject = `New Client Added - ${clientName}`;
+  const preview = `${clientName} has been added to the system.`;
+
+  const body = `${h1('New client added')}
+${p(`Hi ${adminName},`)}
+${p("A new client has been added to the Thrive 4 Better system:")}
+${infoBox(`${infoRow('Client', clientName)}${ndisNumber ? infoRow('NDIS Number', ndisNumber) : ''}${infoRow('Funding Type', fundingType)}`)}
+${ctaButton('View client profile', `${BASE_URL}/clients`)}`;
+
+  return { subject, preview, html: wrapInLayout(subject, preview, body) };
+}
+
+// ─── Document Signed ────────────────────────────────────────────────────────
+export function documentSignedEmail(
+  adminName: string,
+  staffName: string,
+  documentName: string,
+  signedDate: string
+): EmailTemplate {
+  const subject = `Document Signed - ${documentName} by ${staffName}`;
+  const preview = `${staffName} has signed ${documentName}.`;
+
+  const body = `${h1('Document signed')}
+${p(`Hi ${adminName},`)}
+${p(`<strong>${staffName}</strong> has completed and signed the following document:`)}
+${infoBox(`${infoRow('Document', documentName)}${infoRow('Signed by', staffName)}${infoRow('Date', signedDate)}`)}
+${ctaButton('View documents', `${BASE_URL}/documents`)}`;
+
+  return { subject, preview, html: wrapInLayout(subject, preview, body) };
+}

@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Bell, Clock, FileText, Mail, MessageSquare, Phone } from 'lucide-react';
+import { Bell, Clock, FileText, Mail, MessageSquare, Phone, Send } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { supabase } from '@/lib/supabase';
 import type { ReminderSettings as ReminderSettingsType, ReminderChannel } from '@/types';
 
 const STORAGE_KEY = 't4b_reminderSettings';
@@ -218,12 +219,62 @@ export default function ReminderSettings() {
         )}
       </div>
 
-      {/* Save Button */}
-      <div className="flex justify-end">
+      {/* Save & Test Buttons */}
+      <div className="flex items-center justify-between">
+        <SendTestEmailsButton />
         <button onClick={handleSave} className="btn-primary">
           Save Reminder Settings
         </button>
       </div>
     </div>
+  );
+}
+
+function SendTestEmailsButton() {
+  const [sending, setSending] = useState(false);
+
+  const handleSendTestEmails = async () => {
+    setSending(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        toast.error('Not authenticated');
+        return;
+      }
+
+      const res = await fetch('/api/send-test-emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({}),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        toast.success(`${data.sent} test emails sent to ${data.recipient}`);
+        if (data.failed > 0) {
+          toast.error(`${data.failed} emails failed to send`);
+        }
+      } else {
+        toast.error(data.error || 'Failed to send test emails');
+      }
+    } catch (err) {
+      toast.error('Failed to send test emails');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <button
+      onClick={handleSendTestEmails}
+      disabled={sending}
+      className="flex items-center gap-2 px-4 py-2 rounded-lg border border-forest text-forest hover:bg-forest/5 text-sm font-medium transition-colors disabled:opacity-50"
+    >
+      <Send size={16} />
+      {sending ? 'Sending 17 test emails...' : 'Send Test Emails to Thrive4Better'}
+    </button>
   );
 }

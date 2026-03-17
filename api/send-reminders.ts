@@ -1,6 +1,11 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 import { Resend } from 'resend';
+import {
+  shiftReminderEmail,
+  clientAppointmentReminderEmail,
+  overdueInvoiceReminderEmail,
+} from './lib/email-templates.js';
 
 const supabaseUrl = process.env.VITE_SUPABASE_URL!;
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -37,75 +42,21 @@ const TEMPLATES = {
   },
 };
 
-// ── Email Templates ──
+// ── Email Templates (using branded templates from lib) ──
 
 const EMAIL_TEMPLATES = {
-  shift: (carerName: string, clientName: string, time: string, date: string, location: string) => ({
-    subject: `Shift Reminder - ${clientName} on ${date}`,
-    html: `
-      <div style="font-family: 'Poppins', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-        <div style="background: #2D5A3D; color: white; padding: 20px; border-radius: 8px 8px 0 0; text-align: center;">
-          <h1 style="margin: 0; font-size: 20px;">Thrive 4 Better</h1>
-          <p style="margin: 4px 0 0; font-size: 12px; opacity: 0.85;">Shift Reminder</p>
-        </div>
-        <div style="border: 1px solid #e5e7eb; border-top: none; padding: 24px; border-radius: 0 0 8px 8px;">
-          <p>Hi ${carerName},</p>
-          <p>This is a reminder that you have an upcoming shift:</p>
-          <div style="background: #f9fafb; border-radius: 8px; padding: 16px; margin: 16px 0;">
-            <p style="margin: 4px 0;"><strong>Client:</strong> ${clientName}</p>
-            <p style="margin: 4px 0;"><strong>Date:</strong> ${date}</p>
-            <p style="margin: 4px 0;"><strong>Time:</strong> ${time}</p>
-            ${location ? `<p style="margin: 4px 0;"><strong>Location:</strong> ${location}</p>` : ''}
-          </div>
-          <p>Please ensure you arrive on time. Contact the office if you have any questions.</p>
-          <p style="color: #6b7280; font-size: 12px; margin-top: 24px;">Thrive 4 Better | ABN 15 694 748 297</p>
-        </div>
-      </div>`,
-  }),
-  appointment: (clientName: string, time: string, date: string) => ({
-    subject: `Appointment Reminder - ${clientName} on ${date}`,
-    html: `
-      <div style="font-family: 'Poppins', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-        <div style="background: #2D5A3D; color: white; padding: 20px; border-radius: 8px 8px 0 0; text-align: center;">
-          <h1 style="margin: 0; font-size: 20px;">Thrive 4 Better</h1>
-          <p style="margin: 4px 0 0; font-size: 12px; opacity: 0.85;">Appointment Reminder</p>
-        </div>
-        <div style="border: 1px solid #e5e7eb; border-top: none; padding: 24px; border-radius: 0 0 8px 8px;">
-          <p>Hi,</p>
-          <p>This is a friendly reminder of an upcoming appointment:</p>
-          <div style="background: #f9fafb; border-radius: 8px; padding: 16px; margin: 16px 0;">
-            <p style="margin: 4px 0;"><strong>Participant:</strong> ${clientName}</p>
-            <p style="margin: 4px 0;"><strong>Date:</strong> ${date}</p>
-            <p style="margin: 4px 0;"><strong>Time:</strong> ${time}</p>
-          </div>
-          <p>If you need to reschedule, please contact us as soon as possible.</p>
-          <p style="color: #6b7280; font-size: 12px; margin-top: 24px;">Thrive 4 Better | ABN 15 694 748 297</p>
-        </div>
-      </div>`,
-  }),
-  overdue_invoice: (clientName: string, invoiceNumber: string, amount: string, daysPastDue: number, dueDate: string) => ({
-    subject: `Payment Reminder - Invoice ${invoiceNumber} Overdue`,
-    html: `
-      <div style="font-family: 'Poppins', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-        <div style="background: #2D5A3D; color: white; padding: 20px; border-radius: 8px 8px 0 0; text-align: center;">
-          <h1 style="margin: 0; font-size: 20px;">Thrive 4 Better</h1>
-          <p style="margin: 4px 0 0; font-size: 12px; opacity: 0.85;">Payment Reminder</p>
-        </div>
-        <div style="border: 1px solid #e5e7eb; border-top: none; padding: 24px; border-radius: 0 0 8px 8px;">
-          <p>Hi,</p>
-          <p>This is a friendly reminder regarding an outstanding invoice:</p>
-          <div style="background: #f9fafb; border-radius: 8px; padding: 16px; margin: 16px 0;">
-            <p style="margin: 4px 0;"><strong>Invoice:</strong> ${invoiceNumber}</p>
-            <p style="margin: 4px 0;"><strong>Client:</strong> ${clientName}</p>
-            <p style="margin: 4px 0;"><strong>Amount:</strong> $${amount}</p>
-            <p style="margin: 4px 0;"><strong>Due Date:</strong> ${dueDate}</p>
-            <p style="margin: 4px 0; color: #dc2626;"><strong>${daysPastDue} day(s) overdue</strong></p>
-          </div>
-          <p>Please arrange payment at your earliest convenience. If payment has already been made, please disregard this reminder.</p>
-          <p style="color: #6b7280; font-size: 12px; margin-top: 24px;">Thrive 4 Better | ABN 15 694 748 297<br>20 Zelkova Cct, Fraser Rise VIC 3336</p>
-        </div>
-      </div>`,
-  }),
+  shift: (carerName: string, clientName: string, time: string, date: string, location: string) => {
+    const tpl = shiftReminderEmail(carerName, clientName, date, time, '', location);
+    return { subject: tpl.subject, html: tpl.html };
+  },
+  appointment: (clientName: string, time: string, date: string, recipientName: string = '', carerName: string = '') => {
+    const tpl = clientAppointmentReminderEmail(recipientName || 'there', clientName, date, time, carerName, '');
+    return { subject: tpl.subject, html: tpl.html };
+  },
+  overdue_invoice: (clientName: string, invoiceNumber: string, amount: string, daysPastDue: number, dueDate: string, recipientName: string = '') => {
+    const tpl = overdueInvoiceReminderEmail(recipientName || 'there', clientName, invoiceNumber, amount, dueDate, daysPastDue);
+    return { subject: tpl.subject, html: tpl.html };
+  },
 };
 
 function formatTime12(time: string): string {
@@ -317,8 +268,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const invNumber = invoice.invoice_number || invoice.id;
         const amount = invoice.total?.toString() || '0';
 
+        const recipientName = client.nominated_contact_name || `${client.first_name || ''} ${client.last_name || ''}`.trim() || 'there';
         const smsMsg = TEMPLATES.overdue_invoice(clientName, invNumber, amount, daysPastDue);
-        const emailTpl = EMAIL_TEMPLATES.overdue_invoice(clientName, invNumber, amount, daysPastDue, invoice.due_date);
+        const emailTpl = EMAIL_TEMPLATES.overdue_invoice(clientName, invNumber, amount, daysPastDue, invoice.due_date, recipientName);
 
         const { sent, failed, simulated, result } = await sendViaChannel(
           reminderChannel, recipientPhone, recipientEmail, smsMsg, emailTpl.subject, emailTpl.html, invoice.id
@@ -367,8 +319,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const recipientPhone = client.nominated_contact_phone || client.phone;
         const recipientEmail = client.nominated_contact_email || client.email;
         const clientName = `${client.first_name || ''} ${client.last_name || ''}`.trim() || 'the participant';
+        const appointmentRecipientName = client.nominated_contact_name || clientName;
         const smsMsg = TEMPLATES.appointment(clientName, formatTime12(shift.start_time || ''), tomorrowStr);
-        const emailTpl = EMAIL_TEMPLATES.appointment(clientName, formatTime12(shift.start_time || ''), tomorrowStr);
+        const emailTpl = EMAIL_TEMPLATES.appointment(clientName, formatTime12(shift.start_time || ''), tomorrowStr, appointmentRecipientName);
 
         const { sent, failed, simulated, result } = await sendViaChannel(
           reminderChannel, recipientPhone, recipientEmail, smsMsg, emailTpl.subject, emailTpl.html, shift.id
