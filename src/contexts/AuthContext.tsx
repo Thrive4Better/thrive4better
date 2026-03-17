@@ -1,7 +1,8 @@
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, useCallback, type ReactNode } from 'react';
 import type { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import type { UserRole } from '@/types';
+import toast from 'react-hot-toast';
 
 // ── Logging utility ──
 const LOG_PREFIX = '[Auth]';
@@ -11,6 +12,10 @@ function log(...args: unknown[]) {
 function logError(...args: unknown[]) {
   console.error(LOG_PREFIX, ...args);
 }
+
+// ── Session timeout constants ──
+const INACTIVITY_WARNING_MS = 25 * 60 * 1000; // 25 minutes
+const INACTIVITY_SIGNOUT_MS = 30 * 60 * 1000; // 30 minutes
 
 interface UserProfile {
   id: string;
@@ -75,6 +80,87 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const initializedRef = useRef(false);
+
+  // ── Session timeout tracking ──
+  const lastActivityRef = useRef(Date.now());
+  const warningShownRef = useRef(false);
+  const warningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const signoutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const resetActivityTimers = useCallback(() => {
+    lastActivityRef.current = Date.now();
+    warningShownRef.current = false;
+
+    // Clear existing timers
+    if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
+    if (signoutTimerRef.current) clearTimeout(signoutTimerRef.current);
+
+    // Only set timers if user is logged in
+    if (!user) return;
+
+    // Warning timer at 25 minutes
+    warningTimerRef.current = setTimeout(() => {
+      if (user) {
+        warningShownRef.current = true;
+        toast('Session expiring in 5 minutes. Click anywhere to stay signed in.', {
+          duration: 10000,
+          icon: '\u23F0',
+          style: { background: '#FEF3C7', color: '#92400E', border: '1px solid #F59E0B' },
+        });
+      }
+    }, INACTIVITY_WARNING_MS);
+
+    // Auto sign-out timer at 30 minutes
+    signoutTimerRef.current = setTimeout(async () => {
+      if (user) {
+        log('Session timed out due to inactivity');
+        toast.error('Session expired due to inactivity');
+        try {
+          await supabase.auth.signOut();
+          setProfile(null);
+          setUser(null);
+          setSession(null);
+        } catch (err) {
+          logError('Auto sign-out failed:', err);
+        }
+      }
+    }, INACTIVITY_SIGNOUT_MS);
+  }, [user]);
+
+  // Listen for user activity to reset timers
+  useEffect(() => {
+    if (!user) return;
+
+    const handleActivity = () => {
+      resetActivityTimers();
+    };
+
+    // Debounce: only reset on first event in a 5-second window
+    let throttleTimer: ReturnType<typeof setTimeout> | null = null;
+    const throttledHandler = () => {
+      if (throttleTimer) return;
+      handleActivity();
+      throttleTimer = setTimeout(() => { throttleTimer = null; }, 5000);
+    };
+
+    window.addEventListener('click', throttledHandler);
+    window.addEventListener('keypress', throttledHandler);
+    window.addEventListener('mousemove', throttledHandler);
+    window.addEventListener('scroll', throttledHandler);
+
+    // Start the initial timers
+    resetActivityTimers();
+
+    return () => {
+      window.removeEventListener('click', throttledHandler);
+      window.removeEventListener('keypress', throttledHandler);
+      window.removeEventListener('mousemove', throttledHandler);
+      window.removeEventListener('scroll', throttledHandler);
+      if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
+      if (signoutTimerRef.current) clearTimeout(signoutTimerRef.current);
+      if (throttleTimer) clearTimeout(throttleTimer);
+    };
+  }, [user, resetActivityTimers]);
 
   useEffect(() => {
     let mounted = true;

@@ -13,9 +13,13 @@ import {
   Search,
   Check,
   X,
+  Eye,
+  Loader2,
 } from 'lucide-react';
 import { format, addDays, parseISO, isWithinInterval } from 'date-fns';
 import toast from 'react-hot-toast';
+import { pdf } from '@react-pdf/renderer';
+import InvoicePdf from './InvoicePdf';
 
 // ── Import from Roster Modal ──
 interface RosterModalProps {
@@ -210,6 +214,10 @@ export default function InvoiceBuilder() {
   const [clientSearch, setClientSearch] = useState('');
   const [clientDropdownOpen, setClientDropdownOpen] = useState(false);
   const [rosterModalOpen, setRosterModalOpen] = useState(false);
+  const [previewModalOpen, setPreviewModalOpen] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
 
   const activeClients = useMemo(
     () => clients.filter((c) => c.status === 'Active'),
@@ -303,6 +311,91 @@ export default function InvoiceBuilder() {
     },
     []
   );
+
+  // ── Build current invoice object for PDF ──
+  const buildCurrentInvoice = (): Invoice => ({
+    id: existingInvoice?.id ?? '',
+    invoiceNumber,
+    clientId,
+    invoiceDate,
+    dueDate,
+    periodStart,
+    periodEnd,
+    referenceNumber,
+    notesToClient,
+    lineItems,
+    subtotal,
+    gstApplicable,
+    gstAmount,
+    total,
+    status: existingInvoice?.status ?? 'Draft',
+    createdAt: existingInvoice?.createdAt ?? new Date().toISOString(),
+  });
+
+  // ── PDF Download ──
+  const handleDownloadPdf = async () => {
+    if (!selectedClient) {
+      toast.error('Please select a client first');
+      return;
+    }
+    if (lineItems.length === 0) {
+      toast.error('Please add at least one line item');
+      return;
+    }
+    setDownloadingPdf(true);
+    try {
+      const invoice = buildCurrentInvoice();
+      const blob = await pdf(<InvoicePdf invoice={invoice} client={selectedClient} />).toBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Invoice-${invoiceNumber}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success(`Downloaded Invoice-${invoiceNumber}.pdf`);
+    } catch (err) {
+      console.error('PDF generation error:', err);
+      toast.error('Failed to generate PDF');
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
+
+  // ── Preview PDF ──
+  const handlePreviewPdf = async () => {
+    if (!selectedClient) {
+      toast.error('Please select a client first');
+      return;
+    }
+    if (lineItems.length === 0) {
+      toast.error('Please add at least one line item');
+      return;
+    }
+    setPreviewLoading(true);
+    setPreviewModalOpen(true);
+    try {
+      const invoice = buildCurrentInvoice();
+      const blob = await pdf(<InvoicePdf invoice={invoice} client={selectedClient} />).toBlob();
+      const url = URL.createObjectURL(blob);
+      // Revoke previous URL if exists
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      setPreviewUrl(url);
+    } catch (err) {
+      console.error('PDF preview error:', err);
+      toast.error('Failed to generate PDF preview');
+      setPreviewModalOpen(false);
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const closePreviewModal = () => {
+    setPreviewModalOpen(false);
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+      setPreviewUrl(null);
+    }
+  };
 
   // ── Save ──
   const handleSave = async () => {
@@ -788,10 +881,19 @@ export default function InvoiceBuilder() {
           {/* Action buttons */}
           <div className="flex gap-3">
             <button
-              onClick={() => toast('PDF download coming soon', { icon: '📄' })}
+              onClick={handlePreviewPdf}
+              disabled={previewLoading}
+              className="btn-ghost flex-1"
+            >
+              {previewLoading ? <Loader2 size={16} className="animate-spin" /> : <Eye size={16} />}
+              Preview
+            </button>
+            <button
+              onClick={handleDownloadPdf}
+              disabled={downloadingPdf}
               className="btn-secondary flex-1"
             >
-              <Download size={16} />
+              {downloadingPdf ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
               Download PDF
             </button>
             <button onClick={handleSave} className="btn-primary flex-1">
@@ -810,6 +912,57 @@ export default function InvoiceBuilder() {
         getClientById={getClientById}
         onImport={handleImportShifts}
       />
+
+      {/* PDF Preview Modal */}
+      {previewModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="fixed inset-0 bg-black/30 backdrop-blur-sm" onClick={closePreviewModal} />
+          <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-4xl mx-4 h-[90vh] flex flex-col">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-4 border-b border-sage-pale">
+              <h2 className="text-lg font-semibold text-charcoal">Invoice Preview</h2>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleDownloadPdf}
+                  disabled={downloadingPdf}
+                  className="btn-secondary text-sm"
+                >
+                  {downloadingPdf ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+                  Download
+                </button>
+                <button
+                  onClick={closePreviewModal}
+                  className="p-2 hover:bg-sage-pale rounded-lg transition-colors"
+                >
+                  <X size={18} className="text-mid-gray" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 overflow-hidden p-4 bg-gray-100">
+              {previewLoading ? (
+                <div className="flex items-center justify-center h-full">
+                  <div className="text-center">
+                    <Loader2 size={32} className="animate-spin text-forest mx-auto mb-3" />
+                    <p className="text-sm text-mid-gray">Generating preview...</p>
+                  </div>
+                </div>
+              ) : previewUrl ? (
+                <iframe
+                  src={previewUrl}
+                  className="w-full h-full rounded-lg border border-sage-light"
+                  title="Invoice PDF Preview"
+                />
+              ) : (
+                <div className="flex items-center justify-center h-full">
+                  <p className="text-sm text-mid-gray">Failed to load preview</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

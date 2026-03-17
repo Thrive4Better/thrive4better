@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -17,12 +17,18 @@ import {
   Trash2,
   Edit3,
   UserPlus,
+  Upload,
+  Download,
+  X,
+  AlertCircle,
+  CheckCircle2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import { useStore } from '@/stores/useStore';
 import type { Carer } from '@/types';
 import { cn } from '@/lib/utils';
+import { exportToCsv } from '@/lib/export-utils';
 import SlideOver from '@/components/ui/SlideOver';
 import ConfirmModal from '@/components/ui/ConfirmModal';
 import StatusBadge from '@/components/ui/StatusBadge';
@@ -74,6 +80,93 @@ const carerSchema = z.object({
 
 type CarerFormData = z.infer<typeof carerSchema>;
 
+// ── CSV Import types ────────────────────────────────────────
+
+interface CsvCarerRow {
+  firstName: string;
+  lastName: string;
+  phone: string;
+  email: string;
+  role: string;
+  status: string;
+  errors: string[];
+}
+
+function parseCsvLine(line: string): string[] {
+  const fields: string[] = [];
+  let current = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"' && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else if (ch === '"') {
+        inQuotes = false;
+      } else {
+        current += ch;
+      }
+    } else {
+      if (ch === '"') {
+        inQuotes = true;
+      } else if (ch === ',') {
+        fields.push(current.trim());
+        current = '';
+      } else {
+        current += ch;
+      }
+    }
+  }
+  fields.push(current.trim());
+  return fields;
+}
+
+function validateCarerRow(row: CsvCarerRow): string[] {
+  const errors: string[] = [];
+  if (!row.firstName) errors.push('First Name required');
+  if (!row.lastName) errors.push('Last Name required');
+  if (row.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email)) errors.push('Invalid email');
+  if (row.status && !['Active', 'Unavailable', 'On Leave'].includes(row.status)) errors.push('Invalid status');
+  return errors;
+}
+
+function parseCarerCsv(text: string): CsvCarerRow[] {
+  const lines = text.split(/\r?\n/).filter((l) => l.trim());
+  if (lines.length < 2) return [];
+
+  const headers = parseCsvLine(lines[0].toLowerCase());
+  const colMap: Record<string, number> = {};
+  const mapping: Record<string, string> = {
+    'first name': 'firstName', 'firstname': 'firstName',
+    'last name': 'lastName', 'lastname': 'lastName',
+    'phone': 'phone', 'email': 'email',
+    'role': 'role', 'title': 'role',
+    'status': 'status',
+  };
+  headers.forEach((h, i) => {
+    const mapped = mapping[h.trim()];
+    if (mapped) colMap[mapped] = i;
+  });
+
+  const rows: CsvCarerRow[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    const fields = parseCsvLine(lines[i]);
+    const row: CsvCarerRow = {
+      firstName: fields[colMap['firstName'] ?? -1] || '',
+      lastName: fields[colMap['lastName'] ?? -1] || '',
+      phone: fields[colMap['phone'] ?? -1] || '',
+      email: fields[colMap['email'] ?? -1] || '',
+      role: fields[colMap['role'] ?? -1] || 'Support Worker',
+      status: fields[colMap['status'] ?? -1] || 'Active',
+      errors: [],
+    };
+    row.errors = validateCarerRow(row);
+    rows.push(row);
+  }
+  return rows;
+}
+
 // ── Component ──────────────────────────────────────────────
 
 export default function CarersList() {
@@ -90,6 +183,13 @@ export default function CarersList() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingCarer, setEditingCarer] = useState<Carer | null>(null);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+
+  // CSV Import state
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [csvRows, setCsvRows] = useState<CsvCarerRow[]>([]);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{ imported: number; skipped: number } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Current week for hours calculation
   const thisWeekStart = useMemo(
@@ -136,6 +236,63 @@ export default function CarersList() {
     setEditingCarer(null);
   }, []);
 
+  // ── CSV Export ──────────────────────────────────────────────
+
+  const handleExportCsv = useCallback(() => {
+    const headers = ['First Name', 'Last Name', 'Phone', 'Email', 'Role', 'Qualifications', 'Availability', 'Status'];
+    const rows = carers.map((c) => [
+      c.firstName, c.lastName, c.phone, c.email, c.role,
+      c.qualifications.join('; '), c.availability.join('; '), c.status,
+    ]);
+    exportToCsv(`carers-${new Date().toISOString().split('T')[0]}.csv`, headers, rows);
+  }, [carers]);
+
+  // ── CSV Import ──────────────────────────────────────────────
+
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string;
+      setCsvRows(parseCarerCsv(text));
+      setImportResult(null);
+    };
+    reader.readAsText(file);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }, []);
+
+  const handleImport = useCallback(async () => {
+    const validRows = csvRows.filter((r) => r.errors.length === 0);
+    if (validRows.length === 0) {
+      toast.error('No valid rows to import');
+      return;
+    }
+    setImporting(true);
+    let imported = 0;
+    let skipped = 0;
+    for (const row of csvRows) {
+      if (row.errors.length > 0) { skipped++; continue; }
+      try {
+        await addCarer({
+          firstName: row.firstName,
+          lastName: row.lastName,
+          phone: row.phone,
+          email: row.email,
+          role: row.role,
+          qualifications: [],
+          availability: [],
+          status: (row.status as 'Active' | 'Unavailable' | 'On Leave') || 'Active',
+          notes: '',
+        });
+        imported++;
+      } catch { skipped++; }
+    }
+    setImporting(false);
+    setImportResult({ imported, skipped });
+    toast.success(`Imported ${imported} carer${imported !== 1 ? 's' : ''}`);
+  }, [csvRows, addCarer]);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -146,10 +303,21 @@ export default function CarersList() {
             {carers.length} carer{carers.length !== 1 ? 's' : ''} registered
           </p>
         </div>
-        <button onClick={openNewCarer} className="btn-primary flex items-center gap-2">
-          <Plus size={18} />
-          Add Carer
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => { setImportModalOpen(true); setCsvRows([]); setImportResult(null); }}
+            className="btn-ghost flex items-center gap-2"
+          >
+            <Upload size={16} /> Import CSV
+          </button>
+          <button onClick={handleExportCsv} className="btn-ghost flex items-center gap-2">
+            <Download size={16} /> Export CSV
+          </button>
+          <button onClick={openNewCarer} className="btn-primary flex items-center gap-2">
+            <Plus size={18} />
+            Add Carer
+          </button>
+        </div>
       </div>
 
       {/* Carer Cards */}
@@ -244,6 +412,102 @@ export default function CarersList() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* CSV Import Modal */}
+      {importModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="fixed inset-0 bg-black/30 backdrop-blur-sm" onClick={() => setImportModalOpen(false)} />
+          <div className="relative bg-white rounded-2xl shadow-xl p-6 w-full max-w-3xl mx-4 max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-charcoal">Import Carers from CSV</h2>
+              <button onClick={() => setImportModalOpen(false)} className="p-1.5 rounded-lg hover:bg-sage-pale">
+                <X size={18} className="text-mid-gray" />
+              </button>
+            </div>
+
+            {csvRows.length === 0 && !importResult && (
+              <div className="space-y-4">
+                <p className="text-sm text-mid-gray">
+                  Upload a CSV file with columns: First Name, Last Name, Phone, Email, Role, Status
+                </p>
+                <div className="border-2 border-dashed border-sage-pale rounded-xl p-8 text-center">
+                  <Upload size={32} className="mx-auto text-sage mb-3" />
+                  <p className="text-sm text-mid-gray mb-3">Choose a CSV file to upload</p>
+                  <input ref={fileInputRef} type="file" accept=".csv" onChange={handleFileSelect} className="hidden" />
+                  <button onClick={() => fileInputRef.current?.click()} className="btn-secondary">Choose File</button>
+                </div>
+              </div>
+            )}
+
+            {csvRows.length > 0 && !importResult && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-mid-gray">
+                    {csvRows.length} row{csvRows.length !== 1 ? 's' : ''} found
+                    {' \u2022 '}
+                    <span className="text-green-600">{csvRows.filter((r) => r.errors.length === 0).length} valid</span>
+                    {' \u2022 '}
+                    <span className="text-red-600">{csvRows.filter((r) => r.errors.length > 0).length} with errors</span>
+                  </p>
+                  <button onClick={() => setCsvRows([])} className="text-sm text-mid-gray hover:text-charcoal">Clear</button>
+                </div>
+                <div className="overflow-x-auto border border-sage-pale rounded-xl">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-sage-pale bg-sage-pale/30">
+                        <th className="px-3 py-2 text-left font-medium text-charcoal">OK</th>
+                        <th className="px-3 py-2 text-left font-medium text-charcoal">First Name</th>
+                        <th className="px-3 py-2 text-left font-medium text-charcoal">Last Name</th>
+                        <th className="px-3 py-2 text-left font-medium text-charcoal">Phone</th>
+                        <th className="px-3 py-2 text-left font-medium text-charcoal">Email</th>
+                        <th className="px-3 py-2 text-left font-medium text-charcoal">Role</th>
+                        <th className="px-3 py-2 text-left font-medium text-charcoal">Errors</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {csvRows.map((row, i) => (
+                        <tr key={i} className={cn('border-b border-sage-pale/50', row.errors.length > 0 && 'bg-red-50/50')}>
+                          <td className="px-3 py-2">
+                            {row.errors.length === 0 ? <CheckCircle2 size={16} className="text-green-500" /> : <AlertCircle size={16} className="text-red-500" />}
+                          </td>
+                          <td className="px-3 py-2">{row.firstName}</td>
+                          <td className="px-3 py-2">{row.lastName}</td>
+                          <td className="px-3 py-2">{row.phone}</td>
+                          <td className="px-3 py-2">{row.email}</td>
+                          <td className="px-3 py-2">{row.role}</td>
+                          <td className="px-3 py-2 text-red-600 text-xs">{row.errors.join(', ')}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="flex justify-end gap-3">
+                  <button onClick={() => setImportModalOpen(false)} className="btn-ghost">Cancel</button>
+                  <button
+                    onClick={handleImport}
+                    disabled={importing || csvRows.filter((r) => r.errors.length === 0).length === 0}
+                    className="btn-primary"
+                  >
+                    {importing ? 'Importing...' : `Import ${csvRows.filter((r) => r.errors.length === 0).length} Carer${csvRows.filter((r) => r.errors.length === 0).length !== 1 ? 's' : ''}`}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {importResult && (
+              <div className="space-y-4 text-center py-6">
+                <CheckCircle2 size={48} className="mx-auto text-green-500" />
+                <h3 className="text-lg font-semibold text-charcoal">Import Complete</h3>
+                <p className="text-sm text-mid-gray">
+                  {importResult.imported} carer{importResult.imported !== 1 ? 's' : ''} imported.
+                  {importResult.skipped > 0 && ` ${importResult.skipped} skipped.`}
+                </p>
+                <button onClick={() => setImportModalOpen(false)} className="btn-primary">Done</button>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

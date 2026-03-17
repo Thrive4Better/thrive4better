@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -6,12 +6,13 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import toast from 'react-hot-toast';
 import { useStore } from '@/stores/useStore';
 import { formatDate, cn } from '@/lib/utils';
+import { exportToCsv } from '@/lib/export-utils';
 import StatusBadge from '@/components/ui/StatusBadge';
 import SlideOver from '@/components/ui/SlideOver';
 import EmptyState from '@/components/ui/EmptyState';
 import {
   Search, Plus, Users, ChevronUp, ChevronDown, MoreHorizontal,
-  Pencil, Trash2,
+  Pencil, Trash2, Upload, Download, X, AlertCircle, CheckCircle2,
 } from 'lucide-react';
 import type { Client } from '@/types';
 
@@ -50,6 +51,128 @@ const clientSchema = z.object({
 
 type ClientFormData = z.infer<typeof clientSchema>;
 
+// ── CSV Import types ────────────────────────────────────────────────────────
+
+interface CsvRow {
+  firstName: string;
+  lastName: string;
+  dateOfBirth: string;
+  ndisNumber: string;
+  address: string;
+  suburb: string;
+  postcode: string;
+  phone: string;
+  email: string;
+  fundingType: string;
+  status: string;
+  errors: string[];
+}
+
+function parseCsvLine(line: string): string[] {
+  const fields: string[] = [];
+  let current = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"' && line[i + 1] === '"') {
+        current += '"';
+        i++;
+      } else if (ch === '"') {
+        inQuotes = false;
+      } else {
+        current += ch;
+      }
+    } else {
+      if (ch === '"') {
+        inQuotes = true;
+      } else if (ch === ',') {
+        fields.push(current.trim());
+        current = '';
+      } else {
+        current += ch;
+      }
+    }
+  }
+  fields.push(current.trim());
+  return fields;
+}
+
+function validateCsvRow(row: CsvRow): string[] {
+  const errors: string[] = [];
+  if (!row.firstName) errors.push('First Name is required');
+  if (!row.lastName) errors.push('Last Name is required');
+  if (row.ndisNumber && !/^\d{9}$/.test(row.ndisNumber)) errors.push('NDIS number must be 9 digits');
+  if (row.postcode && !/^\d{4}$/.test(row.postcode)) errors.push('Postcode must be 4 digits');
+  if (row.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email)) errors.push('Invalid email');
+  if (row.fundingType && !['Agency Managed', 'Plan Managed', 'Self Managed'].includes(row.fundingType)) {
+    errors.push('Invalid funding type');
+  }
+  if (row.status && !['Active', 'Inactive', 'On Hold'].includes(row.status)) {
+    errors.push('Invalid status');
+  }
+  return errors;
+}
+
+function parseCsvFile(text: string): CsvRow[] {
+  const lines = text.split(/\r?\n/).filter((l) => l.trim());
+  if (lines.length < 2) return [];
+
+  // Skip header row
+  const headerLine = lines[0].toLowerCase();
+  const headers = parseCsvLine(headerLine);
+
+  // Map header names to indices
+  const colMap: Record<string, number> = {};
+  const headerMapping: Record<string, string> = {
+    'first name': 'firstName',
+    'firstname': 'firstName',
+    'last name': 'lastName',
+    'lastname': 'lastName',
+    'dob': 'dateOfBirth',
+    'date of birth': 'dateOfBirth',
+    'dateofbirth': 'dateOfBirth',
+    'ndis number': 'ndisNumber',
+    'ndisnumber': 'ndisNumber',
+    'ndis': 'ndisNumber',
+    'address': 'address',
+    'suburb': 'suburb',
+    'postcode': 'postcode',
+    'phone': 'phone',
+    'email': 'email',
+    'funding type': 'fundingType',
+    'fundingtype': 'fundingType',
+    'status': 'status',
+  };
+
+  headers.forEach((h, i) => {
+    const mapped = headerMapping[h.trim()];
+    if (mapped) colMap[mapped] = i;
+  });
+
+  const rows: CsvRow[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    const fields = parseCsvLine(lines[i]);
+    const row: CsvRow = {
+      firstName: fields[colMap['firstName'] ?? -1] || '',
+      lastName: fields[colMap['lastName'] ?? -1] || '',
+      dateOfBirth: fields[colMap['dateOfBirth'] ?? -1] || '',
+      ndisNumber: fields[colMap['ndisNumber'] ?? -1] || '',
+      address: fields[colMap['address'] ?? -1] || '',
+      suburb: fields[colMap['suburb'] ?? -1] || '',
+      postcode: fields[colMap['postcode'] ?? -1] || '',
+      phone: fields[colMap['phone'] ?? -1] || '',
+      email: fields[colMap['email'] ?? -1] || '',
+      fundingType: fields[colMap['fundingType'] ?? -1] || 'Plan Managed',
+      status: fields[colMap['status'] ?? -1] || 'Active',
+      errors: [],
+    };
+    row.errors = validateCsvRow(row);
+    rows.push(row);
+  }
+  return rows;
+}
+
 // ── Sort helpers ────────────────────────────────────────────────────────────
 
 type SortField = 'name' | 'ndisNumber' | 'planManagerName' | 'fundingType' | 'planEndDate' | 'status';
@@ -86,6 +209,13 @@ export default function ClientList() {
   const [slideOpen, setSlideOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+
+  // CSV Import state
+  const [importModalOpen, setImportModalOpen] = useState(false);
+  const [csvRows, setCsvRows] = useState<CsvRow[]>([]);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{ imported: number; skipped: number } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Unique funding types for the filter dropdown
   const fundingTypes = ['All', 'Agency Managed', 'Plan Managed', 'Self Managed'];
@@ -266,6 +396,87 @@ export default function ClientList() {
     );
   }
 
+  // ── CSV Export ──────────────────────────────────────────────────────────
+
+  const handleExportCsv = useCallback(() => {
+    const headers = [
+      'First Name', 'Last Name', 'DOB', 'NDIS Number', 'Address', 'Suburb',
+      'Postcode', 'Phone', 'Email', 'Funding Type', 'Status',
+    ];
+    const rows = filteredClients.map((c) => [
+      c.firstName, c.lastName, c.dateOfBirth, c.ndisNumber, c.address, c.suburb,
+      c.postcode, c.phone, c.email, c.fundingType, c.status,
+    ]);
+    exportToCsv(`clients-${new Date().toISOString().split('T')[0]}.csv`, headers, rows);
+  }, [filteredClients]);
+
+  // ── CSV Import ──────────────────────────────────────────────────────────
+
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string;
+      const rows = parseCsvFile(text);
+      setCsvRows(rows);
+      setImportResult(null);
+    };
+    reader.readAsText(file);
+    // Reset file input so same file can be re-selected
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }, []);
+
+  const handleImport = useCallback(async () => {
+    const validRows = csvRows.filter((r) => r.errors.length === 0);
+    if (validRows.length === 0) {
+      toast.error('No valid rows to import');
+      return;
+    }
+    setImporting(true);
+    let imported = 0;
+    let skipped = 0;
+    for (const row of csvRows) {
+      if (row.errors.length > 0) {
+        skipped++;
+        continue;
+      }
+      try {
+        await addClient({
+          firstName: row.firstName,
+          lastName: row.lastName,
+          dateOfBirth: row.dateOfBirth,
+          ndisNumber: row.ndisNumber,
+          address: row.address,
+          suburb: row.suburb,
+          postcode: row.postcode,
+          phone: row.phone,
+          email: row.email,
+          emergencyContactName: '',
+          emergencyContactPhone: '',
+          preferredCommunication: 'phone',
+          fundingType: (row.fundingType as 'Agency Managed' | 'Plan Managed' | 'Self Managed') || 'Plan Managed',
+          planStartDate: '',
+          planEndDate: '',
+          planManagerName: '',
+          planManagerEmail: '',
+          planManagerPhone: '',
+          supportCoordinatorName: '',
+          supportCoordinatorContact: '',
+          status: (row.status as 'Active' | 'Inactive' | 'On Hold') || 'Active',
+          notes: '',
+          supportCategories: [],
+        });
+        imported++;
+      } catch {
+        skipped++;
+      }
+    }
+    setImporting(false);
+    setImportResult({ imported, skipped });
+    toast.success(`Imported ${imported} client${imported !== 1 ? 's' : ''}`);
+  }, [csvRows, addClient]);
+
   // ── Render ──────────────────────────────────────────────────────────────
 
   return (
@@ -278,9 +489,20 @@ export default function ClientList() {
             {clients.length} participant{clients.length !== 1 ? 's' : ''} registered
           </p>
         </div>
-        <button onClick={openAddForm} className="btn-primary">
-          <Plus size={16} /> Add Client
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => { setImportModalOpen(true); setCsvRows([]); setImportResult(null); }}
+            className="btn-ghost flex items-center gap-2"
+          >
+            <Upload size={16} /> Import CSV
+          </button>
+          <button onClick={handleExportCsv} className="btn-ghost flex items-center gap-2">
+            <Download size={16} /> Export CSV
+          </button>
+          <button onClick={openAddForm} className="btn-primary">
+            <Plus size={16} /> Add Client
+          </button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -393,7 +615,7 @@ export default function ClientList() {
                       </button>
                     </td>
                     <td className="table-cell font-mono text-sm">{client.ndisNumber}</td>
-                    <td className="table-cell">{client.planManagerName || '—'}</td>
+                    <td className="table-cell">{client.planManagerName || '\u2014'}</td>
                     <td className="table-cell">
                       <span className="badge bg-sage-pale text-forest">{client.fundingType}</span>
                     </td>
@@ -434,6 +656,126 @@ export default function ClientList() {
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* CSV Import Modal */}
+      {importModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="fixed inset-0 bg-black/30 backdrop-blur-sm" onClick={() => setImportModalOpen(false)} />
+          <div className="relative bg-white rounded-2xl shadow-xl p-6 w-full max-w-4xl mx-4 max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-charcoal">Import Clients from CSV</h2>
+              <button onClick={() => setImportModalOpen(false)} className="p-1.5 rounded-lg hover:bg-sage-pale">
+                <X size={18} className="text-mid-gray" />
+              </button>
+            </div>
+
+            {csvRows.length === 0 && !importResult && (
+              <div className="space-y-4">
+                <p className="text-sm text-mid-gray">
+                  Upload a CSV file with the following columns: First Name, Last Name, DOB, NDIS Number, Address, Suburb, Postcode, Phone, Email, Funding Type, Status
+                </p>
+                <div className="border-2 border-dashed border-sage-pale rounded-xl p-8 text-center">
+                  <Upload size={32} className="mx-auto text-sage mb-3" />
+                  <p className="text-sm text-mid-gray mb-3">Drag and drop a CSV file or click to browse</p>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".csv"
+                    onChange={handleFileSelect}
+                    className="hidden"
+                  />
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="btn-secondary"
+                  >
+                    Choose File
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {csvRows.length > 0 && !importResult && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-mid-gray">
+                    {csvRows.length} row{csvRows.length !== 1 ? 's' : ''} found
+                    {' \u2022 '}
+                    <span className="text-green-600">{csvRows.filter((r) => r.errors.length === 0).length} valid</span>
+                    {' \u2022 '}
+                    <span className="text-red-600">{csvRows.filter((r) => r.errors.length > 0).length} with errors</span>
+                  </p>
+                  <button
+                    onClick={() => { setCsvRows([]); }}
+                    className="text-sm text-mid-gray hover:text-charcoal"
+                  >
+                    Clear
+                  </button>
+                </div>
+
+                <div className="overflow-x-auto border border-sage-pale rounded-xl">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-sage-pale bg-sage-pale/30">
+                        <th className="px-3 py-2 text-left font-medium text-charcoal">Status</th>
+                        <th className="px-3 py-2 text-left font-medium text-charcoal">First Name</th>
+                        <th className="px-3 py-2 text-left font-medium text-charcoal">Last Name</th>
+                        <th className="px-3 py-2 text-left font-medium text-charcoal">NDIS Number</th>
+                        <th className="px-3 py-2 text-left font-medium text-charcoal">Email</th>
+                        <th className="px-3 py-2 text-left font-medium text-charcoal">Funding</th>
+                        <th className="px-3 py-2 text-left font-medium text-charcoal">Errors</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {csvRows.map((row, i) => (
+                        <tr key={i} className={cn('border-b border-sage-pale/50', row.errors.length > 0 && 'bg-red-50/50')}>
+                          <td className="px-3 py-2">
+                            {row.errors.length === 0 ? (
+                              <CheckCircle2 size={16} className="text-green-500" />
+                            ) : (
+                              <AlertCircle size={16} className="text-red-500" />
+                            )}
+                          </td>
+                          <td className="px-3 py-2">{row.firstName}</td>
+                          <td className="px-3 py-2">{row.lastName}</td>
+                          <td className="px-3 py-2 font-mono">{row.ndisNumber}</td>
+                          <td className="px-3 py-2">{row.email}</td>
+                          <td className="px-3 py-2">{row.fundingType}</td>
+                          <td className="px-3 py-2 text-red-600 text-xs">{row.errors.join(', ')}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="flex justify-end gap-3">
+                  <button onClick={() => setImportModalOpen(false)} className="btn-ghost">Cancel</button>
+                  <button
+                    onClick={handleImport}
+                    disabled={importing || csvRows.filter((r) => r.errors.length === 0).length === 0}
+                    className="btn-primary"
+                  >
+                    {importing ? 'Importing...' : `Import ${csvRows.filter((r) => r.errors.length === 0).length} Client${csvRows.filter((r) => r.errors.length === 0).length !== 1 ? 's' : ''}`}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {importResult && (
+              <div className="space-y-4 text-center py-6">
+                <CheckCircle2 size={48} className="mx-auto text-green-500" />
+                <h3 className="text-lg font-semibold text-charcoal">Import Complete</h3>
+                <p className="text-sm text-mid-gray">
+                  {importResult.imported} client{importResult.imported !== 1 ? 's' : ''} imported successfully.
+                  {importResult.skipped > 0 && ` ${importResult.skipped} row${importResult.skipped !== 1 ? 's' : ''} skipped.`}
+                </p>
+                <button onClick={() => setImportModalOpen(false)} className="btn-primary">
+                  Done
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

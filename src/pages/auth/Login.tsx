@@ -80,7 +80,7 @@ function OtpInput({ onComplete, disabled }: { onComplete: (code: string) => void
   };
 
   return (
-    <div className="flex gap-3 justify-center">
+    <div className="flex gap-2 sm:gap-3 justify-center">
       {digits.map((digit, i) => (
         <input
           key={i}
@@ -93,7 +93,7 @@ function OtpInput({ onComplete, disabled }: { onComplete: (code: string) => void
           onChange={(e) => handleChange(i, e.target.value)}
           onKeyDown={(e) => handleKeyDown(i, e)}
           onPaste={i === 0 ? handlePaste : undefined}
-          className="w-12 h-14 text-center text-2xl font-bold rounded-xl border border-sage-pale bg-sage-pale/20 text-forest focus:outline-none focus:ring-2 focus:ring-forest focus:border-transparent transition disabled:opacity-50"
+          className="w-10 h-12 sm:w-12 sm:h-14 text-center text-xl sm:text-2xl font-bold rounded-xl border border-sage-pale bg-sage-pale/20 text-forest focus:outline-none focus:ring-2 focus:ring-forest focus:border-transparent transition disabled:opacity-50"
         />
       ))}
     </div>
@@ -179,20 +179,20 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-cream flex items-center justify-center px-4 py-12">
+    <div className="min-h-screen bg-cream flex items-center justify-center px-3 sm:px-4 py-6 sm:py-12">
       <div className="w-full max-w-md">
         {/* Logo Area */}
-        <div className="bg-forest rounded-t-2xl px-8 py-10 text-center">
-          <h1 className="text-3xl font-bold text-white tracking-tight">
+        <div className="bg-forest rounded-t-2xl px-5 sm:px-8 py-8 sm:py-10 text-center">
+          <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
             Thrive 4 Better
           </h1>
-          <p className="text-sage-light mt-2 text-sm font-medium uppercase tracking-widest">
+          <p className="text-sage-light mt-2 text-xs sm:text-sm font-medium uppercase tracking-widest">
             NDIS Support Services
           </p>
         </div>
 
         {/* Card Body */}
-        <div className="bg-white rounded-b-2xl border border-sage-pale shadow-lg px-8 py-8">
+        <div className="bg-white rounded-b-2xl border border-sage-pale shadow-lg px-5 sm:px-8 py-6 sm:py-8">
           {/* OTP Verification Screen */}
           {signUpSuccess ? (
             <div className="text-center">

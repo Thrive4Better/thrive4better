@@ -5,8 +5,14 @@ import {
   AlertTriangle,
   Sparkles,
   Settings,
+  X,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+
+interface StaffSidebarProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
 
 const navSections = [
   {
@@ -25,7 +31,7 @@ const navSections = [
   },
 ];
 
-export default function StaffSidebar() {
+export default function StaffSidebar({ isOpen, onClose }: StaffSidebarProps) {
   const location = useLocation();
   const { user, profile } = useAuth();
 
@@ -41,17 +47,31 @@ export default function StaffSidebar() {
   };
 
   return (
-    <aside className="w-60 bg-white border-r border-sage-pale flex flex-col h-screen fixed left-0 top-0 z-30">
-      {/* Logo */}
+    <aside
+      className={`w-60 bg-white border-r border-sage-pale flex flex-col h-screen fixed left-0 top-0 z-50 transition-transform duration-300 ease-in-out
+        lg:translate-x-0 lg:z-30
+        ${isOpen ? 'translate-x-0' : '-translate-x-full'}
+      `}
+    >
+      {/* Logo + mobile close */}
       <div className="px-5 py-5 border-b border-sage-pale">
-        <div className="flex items-center gap-2">
-          <div className="w-9 h-9 bg-forest rounded-lg flex items-center justify-center">
-            <span className="text-white font-bold text-sm">T4B</span>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-9 h-9 bg-forest rounded-lg flex items-center justify-center">
+              <span className="text-white font-bold text-sm">T4B</span>
+            </div>
+            <div>
+              <h1 className="text-base font-semibold text-charcoal leading-tight">Thrive 4 Better</h1>
+              <p className="text-[11px] text-mid-gray leading-tight">NDIS Support Services</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-base font-semibold text-charcoal leading-tight">Thrive 4 Better</h1>
-            <p className="text-[11px] text-mid-gray leading-tight">NDIS Support Services</p>
-          </div>
+          <button
+            onClick={onClose}
+            className="lg:hidden p-1 rounded-lg hover:bg-sage-pale transition-colors text-mid-gray"
+            aria-label="Close sidebar"
+          >
+            <X size={20} />
+          </button>
         </div>
       </div>
 

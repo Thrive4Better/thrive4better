@@ -27,6 +27,7 @@ import MyShifts from '@/pages/staff/MyShifts';
 import MyTimesheet from '@/pages/staff/MyTimesheet';
 import UserManagement from '@/pages/admin/UserManagement';
 import Settings from '@/pages/settings/Settings';
+import NotFound from '@/pages/NotFound';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 
 // Lazy-loaded accounting pages
@@ -112,6 +113,9 @@ export default function App() {
               <Route element={<ProtectedRoute allowedRoles={['admin']} />}>
                 <Route path="/admin/users" element={<UserManagement />} />
               </Route>
+
+              {/* 404 catch-all */}
+              <Route path="*" element={<NotFound />} />
             </Route>
           </Route>
         </Routes>

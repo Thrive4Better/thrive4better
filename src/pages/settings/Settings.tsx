@@ -1,13 +1,17 @@
 import { useState } from 'react';
 import { useStore } from '@/stores/useStore';
-import { Building2, Palette, Database, RotateCcw } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabase';
+import { Building2, Palette, Database, RotateCcw, Lock, User } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { mockClients, mockCarers, mockShifts, mockInvoices, mockCarePlans, mockNdisRates, mockDocuments } from '@/data/mockData';
+// mockData import removed - data reset uses localStorage clear
 
 export default function Settings() {
-  const [activeTab, setActiveTab] = useState<'business' | 'display' | 'data'>('business');
+  const [activeTab, setActiveTab] = useState<'profile' | 'security' | 'business' | 'display' | 'data'>('profile');
 
   const tabs = [
+    { id: 'profile' as const, label: 'Profile', icon: User },
+    { id: 'security' as const, label: 'Security', icon: Lock },
     { id: 'business' as const, label: 'Business Details', icon: Building2 },
     { id: 'display' as const, label: 'Display', icon: Palette },
     { id: 'data' as const, label: 'Data Management', icon: Database },
@@ -15,7 +19,7 @@ export default function Settings() {
 
   return (
     <div className="max-w-4xl">
-      <div className="flex gap-2 mb-6">
+      <div className="flex gap-2 mb-6 flex-wrap">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           return (
@@ -35,9 +39,188 @@ export default function Settings() {
         })}
       </div>
 
+      {activeTab === 'profile' && <ProfileSettings />}
+      {activeTab === 'security' && <SecuritySettings />}
       {activeTab === 'business' && <BusinessSettings />}
       {activeTab === 'display' && <DisplaySettings />}
       {activeTab === 'data' && <DataSettings />}
+    </div>
+  );
+}
+
+function ProfileSettings() {
+  const { profile, user, refreshProfile } = useAuth();
+  const [fullName, setFullName] = useState(profile?.fullName || '');
+  const [phone, setPhone] = useState(profile?.phone || '');
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    if (!user) return;
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          full_name: fullName,
+          phone: phone,
+        })
+        .eq('id', user.id);
+
+      if (error) {
+        toast.error('Failed to update profile: ' + error.message);
+      } else {
+        await refreshProfile();
+        toast.success('Profile updated successfully');
+      }
+    } catch (err) {
+      toast.error('Something went wrong. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="card space-y-6">
+      <h3 className="text-lg font-semibold text-charcoal">User Profile</h3>
+      <div className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-charcoal mb-1">Email</label>
+          <input
+            type="email"
+            value={user?.email || ''}
+            disabled
+            className="input-field bg-sage-pale/30 text-mid-gray cursor-not-allowed"
+          />
+          <p className="text-xs text-mid-gray mt-1">Email cannot be changed here</p>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-charcoal mb-1">Full Name</label>
+          <input
+            type="text"
+            value={fullName}
+            onChange={(e) => setFullName(e.target.value)}
+            className="input-field"
+            placeholder="Your full name"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-charcoal mb-1">Phone Number</label>
+          <input
+            type="text"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            className="input-field"
+            placeholder="04xx xxx xxx"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-charcoal mb-1">Role</label>
+          <input
+            type="text"
+            value={profile?.role || 'staff'}
+            disabled
+            className="input-field bg-sage-pale/30 text-mid-gray cursor-not-allowed capitalize"
+          />
+          <p className="text-xs text-mid-gray mt-1">Contact an admin to change your role</p>
+        </div>
+      </div>
+      <div className="flex justify-end pt-4">
+        <button
+          className="btn-primary"
+          onClick={handleSave}
+          disabled={saving}
+        >
+          {saving ? 'Saving...' : 'Save Profile'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function SecuritySettings() {
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleChangePassword = async () => {
+    setError('');
+
+    if (newPassword.length < 6) {
+      setError('Password must be at least 6 characters');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+
+      if (updateError) {
+        toast.error('Failed to change password: ' + updateError.message);
+      } else {
+        toast.success('Password changed successfully');
+        setNewPassword('');
+        setConfirmPassword('');
+      }
+    } catch (err) {
+      toast.error('Something went wrong. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="card space-y-6">
+      <h3 className="text-lg font-semibold text-charcoal">Change Password</h3>
+      <div className="space-y-4 max-w-md">
+        <div>
+          <label className="block text-sm font-medium text-charcoal mb-1">New Password</label>
+          <input
+            type="password"
+            value={newPassword}
+            onChange={(e) => { setNewPassword(e.target.value); setError(''); }}
+            className="input-field"
+            placeholder="Enter new password"
+            autoComplete="new-password"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-charcoal mb-1">Confirm New Password</label>
+          <input
+            type="password"
+            value={confirmPassword}
+            onChange={(e) => { setConfirmPassword(e.target.value); setError(''); }}
+            className="input-field"
+            placeholder="Confirm new password"
+            autoComplete="new-password"
+          />
+        </div>
+        {error && (
+          <p className="text-sm text-red-600">{error}</p>
+        )}
+      </div>
+      <div className="flex justify-end pt-4">
+        <button
+          className="btn-primary"
+          onClick={handleChangePassword}
+          disabled={saving || !newPassword || !confirmPassword}
+        >
+          {saving ? 'Changing...' : 'Change Password'}
+        </button>
+      </div>
+
+      <div className="border-t border-sage-pale pt-6 mt-6">
+        <h4 className="text-sm font-semibold text-charcoal mb-2">Session Security</h4>
+        <p className="text-sm text-mid-gray">
+          Your session will automatically expire after 30 minutes of inactivity. You will receive a warning at 25 minutes.
+        </p>
+      </div>
     </div>
   );
 }

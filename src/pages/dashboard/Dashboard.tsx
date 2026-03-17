@@ -105,7 +105,7 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
       {/* KPI Cards */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
         <div className="card">
           <div className="flex items-center justify-between">
             <div>
@@ -157,7 +157,7 @@ export default function Dashboard() {
       </div>
 
       {/* Charts Row */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4">
         <div className="card">
           <h3 className="text-sm font-semibold text-charcoal mb-4">Weekly Billable Hours</h3>
           <ResponsiveContainer width="100%" height={200}>
@@ -211,7 +211,7 @@ export default function Dashboard() {
       </div>
 
       {/* Tables Row */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
         <div className="card">
           <h3 className="text-sm font-semibold text-charcoal mb-4">Upcoming Shifts Today</h3>
           {todayShifts.length === 0 ? (
@@ -277,7 +277,7 @@ export default function Dashboard() {
       </div>
 
       {/* Quick Actions */}
-      <div className="flex gap-3">
+      <div className="flex flex-wrap gap-3">
         <button onClick={() => navigate('/clients')} className="btn-primary">
           <Plus size={16} /> New Client
         </button>

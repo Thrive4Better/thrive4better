@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '@/stores/useStore';
+import { useAuth } from '@/contexts/AuthContext';
 import { formatCurrency, formatDate, cn } from '@/lib/utils';
 import { exportToCsv, fmtCurrencyPlain } from '@/lib/export-utils';
 import StatusBadge from '@/components/ui/StatusBadge';
@@ -18,9 +19,14 @@ import {
   Pencil,
   Send,
   CreditCard,
+  Mail,
+  Loader2,
 } from 'lucide-react';
 import { parseISO, isWithinInterval, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
 import toast from 'react-hot-toast';
+import { pdf } from '@react-pdf/renderer';
+import InvoicePdf from './InvoicePdf';
+import type { Invoice, Client } from '@/types';
 
 type InvoiceStatus = 'All' | 'Draft' | 'Sent' | 'Paid' | 'Overdue';
 type SortField = 'invoiceNumber' | 'clientName' | 'periodStart' | 'lineItems' | 'subtotal' | 'gstAmount' | 'total' | 'dueDate';
@@ -29,17 +35,108 @@ type SortDir = 'asc' | 'desc';
 export default function InvoiceList() {
   const navigate = useNavigate();
   const { invoices, clients, updateInvoice, getClientById } = useStore();
+  const { session } = useAuth();
 
   const [activeTab, setActiveTab] = useState<InvoiceStatus>('All');
   const [sortField, setSortField] = useState<SortField>('invoiceNumber');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [sendingId, setSendingId] = useState<string | null>(null);
   const [confirmModal, setConfirmModal] = useState<{ open: boolean; title: string; message: string; onConfirm: () => void }>({
     open: false,
     title: '',
     message: '',
     onConfirm: () => {},
   });
+
+  // ── PDF Download ──
+  const handleDownloadPdf = async (invoice: Invoice, client: Client | undefined) => {
+    if (!client) {
+      toast.error('Client not found for this invoice');
+      return;
+    }
+    setDownloadingId(invoice.id);
+    try {
+      const blob = await pdf(<InvoicePdf invoice={invoice} client={client} />).toBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Invoice-${invoice.invoiceNumber}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success(`Downloaded Invoice-${invoice.invoiceNumber}.pdf`);
+    } catch (err) {
+      console.error('PDF generation error:', err);
+      toast.error('Failed to generate PDF');
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  // ── Email Invoice ──
+  const handleSendEmail = async (invoice: Invoice, client: Client | undefined) => {
+    if (!client) {
+      toast.error('Client not found for this invoice');
+      return;
+    }
+    if (!client.email && !client.planManagerEmail) {
+      toast.error('No email address on file for this client');
+      return;
+    }
+
+    setConfirmModal({
+      open: true,
+      title: `Send Invoice ${invoice.invoiceNumber}?`,
+      message: `This will email the invoice to ${client.fundingType === 'Plan Managed' && client.planManagerEmail ? client.planManagerEmail : client.email}. The invoice status will be updated to "Sent".`,
+      onConfirm: async () => {
+        setConfirmModal((m) => ({ ...m, open: false }));
+        setSendingId(invoice.id);
+        try {
+          // Generate PDF as base64
+          const blob = await pdf(<InvoicePdf invoice={invoice} client={client} />).toBlob();
+          const buffer = await blob.arrayBuffer();
+          const bytes = new Uint8Array(buffer);
+          let binary = '';
+          for (let i = 0; i < bytes.length; i++) {
+            binary += String.fromCharCode(bytes[i]);
+          }
+          const pdfBase64 = btoa(binary);
+
+          const token = session?.access_token;
+          if (!token) {
+            toast.error('You must be logged in to send invoices');
+            return;
+          }
+
+          const res = await fetch('/api/send-invoice', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              invoiceId: invoice.id,
+              pdfBase64,
+            }),
+          });
+
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.error || 'Failed to send invoice');
+          }
+
+          updateInvoice(invoice.id, { status: 'Sent' });
+          toast.success(data.message || `Invoice ${invoice.invoiceNumber} sent successfully`);
+        } catch (err) {
+          console.error('Send invoice error:', err);
+          toast.error(err instanceof Error ? err.message : 'Failed to send invoice');
+        } finally {
+          setSendingId(null);
+        }
+      },
+    });
+  };
 
   // ── KPIs ──
   const kpis = useMemo(() => {
@@ -361,11 +458,20 @@ export default function InvoiceList() {
                             <Pencil size={15} />
                           </button>
                           <button
-                            onClick={() => toast('PDF download coming soon', { icon: '📄' })}
-                            className="p-1.5 rounded-lg hover:bg-sage-pale text-mid-gray hover:text-forest transition-colors"
+                            onClick={() => handleDownloadPdf(invoice, client)}
+                            disabled={downloadingId === invoice.id}
+                            className="p-1.5 rounded-lg hover:bg-sage-pale text-mid-gray hover:text-forest transition-colors disabled:opacity-50"
                             title="Download PDF"
                           >
-                            <Download size={15} />
+                            {downloadingId === invoice.id ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
+                          </button>
+                          <button
+                            onClick={() => handleSendEmail(invoice, client)}
+                            disabled={sendingId === invoice.id}
+                            className="p-1.5 rounded-lg hover:bg-blue-50 text-mid-gray hover:text-blue-600 transition-colors disabled:opacity-50"
+                            title="Send Invoice Email"
+                          >
+                            {sendingId === invoice.id ? <Loader2 size={15} className="animate-spin" /> : <Mail size={15} />}
                           </button>
                           {invoice.status !== 'Paid' && (
                             <button

@@ -1,6 +1,10 @@
 import { useLocation } from 'react-router-dom';
-import { Search, Bell, LogOut } from 'lucide-react';
+import { Search, Bell, LogOut, Menu } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+
+interface HeaderProps {
+  onToggleSidebar: () => void;
+}
 
 const pageTitles: Record<string, { title: string; breadcrumb: string[] }> = {
   '/dashboard': { title: 'Dashboard', breadcrumb: ['Overview'] },
@@ -35,7 +39,7 @@ const pageTitles: Record<string, { title: string; breadcrumb: string[] }> = {
   '/tools/support-plans': { title: 'AI Support Plans', breadcrumb: ['AI Tools', 'Support Plans'] },
 };
 
-export default function Header() {
+export default function Header({ onToggleSidebar }: HeaderProps) {
   const location = useLocation();
   const { user, signOut } = useAuth();
 
@@ -60,35 +64,45 @@ export default function Header() {
     .join('');
 
   return (
-    <header className="h-16 bg-white border-b border-sage-pale flex items-center justify-between px-6 sticky top-0 z-20">
-      <div className="flex items-center gap-4">
-        <div>
-          <div className="flex items-center gap-2 text-xs text-mid-gray">
+    <header className="h-14 lg:h-16 bg-white border-b border-sage-pale flex items-center justify-between px-3 sm:px-4 lg:px-6 sticky top-0 z-20">
+      <div className="flex items-center gap-3 min-w-0">
+        {/* Hamburger - mobile only */}
+        <button
+          onClick={onToggleSidebar}
+          className="lg:hidden p-2 -ml-1 rounded-lg hover:bg-sage-pale transition-colors text-mid-gray"
+          aria-label="Open sidebar"
+        >
+          <Menu size={22} />
+        </button>
+
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-xs text-mid-gray truncate">
             {breadcrumb.map((crumb, i) => (
-              <span key={i} className="flex items-center gap-2">
+              <span key={i} className="flex items-center gap-2 whitespace-nowrap">
                 {i > 0 && <span>/</span>}
                 {crumb}
               </span>
             ))}
           </div>
-          <h2 className="text-lg font-semibold text-charcoal leading-tight">{title}</h2>
+          <h2 className="text-base lg:text-lg font-semibold text-charcoal leading-tight truncate">{title}</h2>
         </div>
       </div>
 
-      <div className="flex items-center gap-3">
-        <div className="relative">
+      <div className="flex items-center gap-2 lg:gap-3 flex-shrink-0">
+        {/* Search - hidden on small mobile, shown from sm up */}
+        <div className="relative hidden sm:block">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-mid-gray" />
           <input
             type="text"
             placeholder="Search..."
-            className="pl-9 pr-4 py-2 rounded-lg bg-sage-pale/50 border-0 text-sm text-charcoal placeholder:text-mid-gray focus:outline-none focus:ring-2 focus:ring-forest/20 w-64"
+            className="pl-9 pr-4 py-2 rounded-lg bg-sage-pale/50 border-0 text-sm text-charcoal placeholder:text-mid-gray focus:outline-none focus:ring-2 focus:ring-forest/20 w-40 lg:w-64"
           />
         </div>
         <button className="relative p-2 rounded-lg hover:bg-sage-pale transition-colors">
           <Bell size={20} className="text-mid-gray" />
           <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-burgundy rounded-full" />
         </button>
-        <div className="flex items-center gap-2 ml-2">
+        <div className="hidden md:flex items-center gap-2 ml-1 lg:ml-2">
           <div className="w-8 h-8 rounded-full bg-forest flex items-center justify-center">
             <span className="text-white text-xs font-semibold">{initials}</span>
           </div>

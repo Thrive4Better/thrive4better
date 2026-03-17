@@ -17,10 +17,12 @@ import {
   Trash2,
   CheckCircle2,
   ListFilter,
+  Download,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import { useStore } from '@/stores/useStore';
+import { exportToCsv } from '@/lib/export-utils';
 import type { Shift } from '@/types';
 import {
   cn,
@@ -267,6 +269,76 @@ export default function ShiftsList() {
     navigate('/invoices/new', { state: { shiftIds: Array.from(selectedIds) } });
   }, [selectedIds, navigate]);
 
+  // Bulk delete
+  const [bulkDeleteModalOpen, setBulkDeleteModalOpen] = useState(false);
+
+  const handleBulkDelete = useCallback(() => {
+    if (selectedIds.size === 0) {
+      toast.error('Select at least one shift');
+      return;
+    }
+    setBulkDeleteModalOpen(true);
+  }, [selectedIds]);
+
+  const confirmBulkDelete = useCallback(async () => {
+    const ids = Array.from(selectedIds);
+    let deleted = 0;
+    for (const id of ids) {
+      try {
+        await deleteShift(id);
+        deleted++;
+      } catch { /* skip */ }
+    }
+    setSelectedIds(new Set());
+    setBulkDeleteModalOpen(false);
+    toast.success(`Deleted ${deleted} shift${deleted !== 1 ? 's' : ''}`);
+  }, [selectedIds, deleteShift]);
+
+  // Bulk mark completed
+  const handleBulkComplete = useCallback(async () => {
+    if (selectedIds.size === 0) {
+      toast.error('Select at least one shift');
+      return;
+    }
+    const ids = Array.from(selectedIds);
+    let updated = 0;
+    for (const id of ids) {
+      try {
+        await updateShift(id, { status: 'Completed' });
+        updated++;
+      } catch { /* skip */ }
+    }
+    setSelectedIds(new Set());
+    toast.success(`Marked ${updated} shift${updated !== 1 ? 's' : ''} as completed`);
+  }, [selectedIds, updateShift]);
+
+  // Export selected as CSV
+  const handleExportSelected = useCallback(() => {
+    const shiftsToExport = selectedIds.size > 0
+      ? filteredShifts.filter((s) => selectedIds.has(s.id))
+      : filteredShifts;
+    if (shiftsToExport.length === 0) {
+      toast.error('No shifts to export');
+      return;
+    }
+    const headers = [
+      'Date', 'Start Time', 'End Time', 'Client', 'Carer', 'Service Type',
+      'Hours', 'Hourly Rate', 'Total', 'Status', 'Notes',
+    ];
+    const rows = shiftsToExport.map((s) => {
+      const client = getClientById(s.clientId);
+      const carer = getCarerById(s.carerId);
+      return [
+        s.date, s.startTime, s.endTime,
+        client ? `${client.firstName} ${client.lastName}` : 'Unknown',
+        carer ? `${carer.firstName} ${carer.lastName}` : 'Unassigned',
+        s.serviceType, s.hours.toFixed(2), s.hourlyRate.toFixed(2),
+        s.totalAmount.toFixed(2), s.status, s.notes,
+      ];
+    });
+    exportToCsv(`shifts-${new Date().toISOString().split('T')[0]}.csv`, headers, rows);
+  }, [selectedIds, filteredShifts, getClientById, getCarerById]);
+
   // Drawer
   const openNewShift = useCallback(() => {
     setEditingShift(null);
@@ -304,14 +376,34 @@ export default function ShiftsList() {
         </div>
         <div className="flex items-center gap-3">
           {selectedIds.size > 0 && (
-            <button
-              onClick={handleGenerateInvoice}
-              className="btn-secondary flex items-center gap-2"
-            >
-              <FileText size={16} />
-              Generate Invoice ({selectedIds.size})
-            </button>
+            <>
+              <button
+                onClick={handleBulkComplete}
+                className="btn-ghost flex items-center gap-2 text-sm"
+              >
+                <CheckCircle2 size={16} />
+                Mark Completed ({selectedIds.size})
+              </button>
+              <button
+                onClick={handleBulkDelete}
+                className="btn-ghost flex items-center gap-2 text-sm text-red-600 hover:bg-red-50"
+              >
+                <Trash2 size={16} />
+                Delete ({selectedIds.size})
+              </button>
+              <button
+                onClick={handleGenerateInvoice}
+                className="btn-secondary flex items-center gap-2"
+              >
+                <FileText size={16} />
+                Generate Invoice ({selectedIds.size})
+              </button>
+            </>
           )}
+          <button onClick={handleExportSelected} className="btn-ghost flex items-center gap-2">
+            <Download size={16} />
+            Export CSV{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
+          </button>
           <button onClick={openNewShift} className="btn-primary flex items-center gap-2">
             <Plus size={18} />
             Add Shift
@@ -578,6 +670,15 @@ export default function ShiftsList() {
         }}
         title="Delete Shift"
         message="Are you sure you want to delete this shift? This action cannot be undone."
+      />
+
+      {/* Bulk Delete Confirmation */}
+      <ConfirmModal
+        open={bulkDeleteModalOpen}
+        onClose={() => setBulkDeleteModalOpen(false)}
+        onConfirm={confirmBulkDelete}
+        title="Delete Selected Shifts"
+        message={`Are you sure you want to delete ${selectedIds.size} selected shift${selectedIds.size !== 1 ? 's' : ''}? This action cannot be undone.`}
       />
     </div>
   );
