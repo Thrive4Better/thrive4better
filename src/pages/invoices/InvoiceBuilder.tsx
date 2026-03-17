@@ -20,6 +20,7 @@ import { format, addDays, parseISO, isWithinInterval } from 'date-fns';
 import toast from 'react-hot-toast';
 import { pdf } from '@react-pdf/renderer';
 import InvoicePdf from './InvoicePdf';
+import { NDIS_SUPPORT_CATEGORIES, PAYMENT_TERMS } from '@/lib/categories';
 
 // ── Import from Roster Modal ──
 interface RosterModalProps {
@@ -668,13 +669,16 @@ export default function InvoiceBuilder() {
                           />
                         </td>
                         <td className="px-4 py-2">
-                          <input
-                            type="text"
+                          <select
                             value={item.supportCategory}
                             onChange={(e) => updateLineItem(item.id, 'supportCategory', e.target.value)}
-                            placeholder="Category"
                             className="input-field text-xs"
-                          />
+                          >
+                            <option value="">Select category</option>
+                            {NDIS_SUPPORT_CATEGORIES.map((cat) => (
+                              <option key={cat} value={cat}>{cat}</option>
+                            ))}
+                          </select>
                         </td>
                         <td className="px-4 py-2">
                           <input

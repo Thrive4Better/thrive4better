@@ -39,6 +39,7 @@ import SlideOver from '@/components/ui/SlideOver';
 import ConfirmModal from '@/components/ui/ConfirmModal';
 import StatusBadge from '@/components/ui/StatusBadge';
 import EmptyState from '@/components/ui/EmptyState';
+import { NDIS_SUPPORT_CATEGORIES } from '@/lib/categories';
 
 // ── Constants ──────────────────────────────────────────────
 
@@ -62,12 +63,12 @@ const SHIFT_STATUSES = [
 ] as const;
 
 const SERVICE_TYPE_CATEGORY_MAP: Record<ServiceType, string> = {
-  'Daily Living': '01 - Daily Activities',
-  'Community Access': '04 - Assistance with Social',
-  SIL: '03 - SIL',
-  Transport: '04 - Assistance with Social',
-  'Social/Rec': '04 - Assistance with Social',
-  Other: '01 - Daily Activities',
+  'Daily Living': 'Core - Assistance with Daily Life',
+  'Community Access': 'Core - Assistance with Social & Community Participation',
+  SIL: 'SIL - Supported Independent Living',
+  Transport: 'Core - Transport',
+  'Social/Rec': 'Core - Assistance with Social & Community Participation',
+  Other: 'Core - Assistance with Daily Life',
 };
 
 const SERVICE_TYPE_LINE_ITEM_MAP: Record<ServiceType, string> = {
@@ -952,7 +953,12 @@ function ShiftFormInline({ shift, clients, carers, onSave, onDelete, onCancel }:
         <label className="block text-sm font-medium text-charcoal mb-1">
           NDIS Support Category
         </label>
-        <input {...register('supportCategory')} className="input-field" />
+        <select {...register('supportCategory')} className="input-field">
+          <option value="">Select category</option>
+          {NDIS_SUPPORT_CATEGORIES.map((cat) => (
+            <option key={cat} value={cat}>{cat}</option>
+          ))}
+        </select>
       </div>
 
       {/* Line Item Code */}
