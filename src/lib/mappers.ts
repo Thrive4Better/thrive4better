@@ -440,6 +440,10 @@ export function toInvoice(row: any): Invoice {
     gstAmount: row.gst_amount,
     total: row.total,
     status: row.status,
+    approvalStatus: row.approval_status ?? undefined,
+    approvedBy: row.approved_by ?? undefined,
+    approvedAt: row.approved_at ?? undefined,
+    approvalNotes: row.approval_notes ?? undefined,
     createdAt: row.created_at,
   };
 }
@@ -462,6 +466,10 @@ export function fromInvoice(
     gst_amount: entity.gstAmount,
     total: entity.total,
     status: entity.status,
+    approval_status: entity.approvalStatus,
+    approved_by: entity.approvedBy,
+    approved_at: entity.approvedAt,
+    approval_notes: entity.approvalNotes,
     created_at: (entity as Invoice).createdAt,
   });
 }

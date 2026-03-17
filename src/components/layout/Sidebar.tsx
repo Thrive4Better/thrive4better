@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/hooks/usePermissions';
+import { useStore } from '@/stores/useStore';
 import type { Permission } from '@/lib/permissions';
 
 interface SidebarProps {
@@ -43,6 +44,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
   const location = useLocation();
   const { user, role } = useAuth();
   const { hasPermission, hasAnyPermission } = usePermissions();
+  const pendingApprovals = useStore((s) => s.invoices.filter((i) => i.approvalStatus === 'pending_approval').length);
 
   const userName = user?.user_metadata?.full_name || user?.email || 'User';
   const initials = userName
@@ -291,7 +293,12 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
                     }`}
                   >
                     <Icon size={18} strokeWidth={active ? 2.2 : 1.8} />
-                    {item.label}
+                    <span className="flex-1">{item.label}</span>
+                    {item.to === '/invoices' && pendingApprovals > 0 && (
+                      <span className="ml-auto inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-[10px] font-bold rounded-full bg-amber-500 text-white">
+                        {pendingApprovals}
+                      </span>
+                    )}
                   </NavLink>
                 );
               })}

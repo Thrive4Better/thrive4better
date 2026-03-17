@@ -69,6 +69,13 @@ export function getStatusColor(status: string): string {
     Submitted: 'bg-blue-100 text-blue-800',
     Approved: 'bg-emerald-100 text-emerald-800',
     Rejected: 'bg-red-100 text-red-700',
+    // Invoice approval statuses
+    'Pending Approval': 'bg-amber-100 text-amber-800',
+    'pending_approval': 'bg-amber-100 text-amber-800',
+    'approved': 'bg-emerald-100 text-emerald-800',
+    'rejected': 'bg-red-100 text-red-700',
+    'draft': 'bg-gray-100 text-gray-600',
+    'sent': 'bg-blue-100 text-blue-800',
   };
   return colors[status] || 'bg-gray-100 text-gray-600';
 }

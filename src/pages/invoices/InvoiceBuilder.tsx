@@ -228,6 +228,7 @@ export default function InvoiceBuilder({ modalMode, editId: editIdProp, onClose,
     invoices,
     clients,
     shifts,
+    ndisRates,
     addInvoice,
     updateInvoice,
     getClientById,
@@ -288,18 +289,27 @@ export default function InvoiceBuilder({ modalMode, editId: editIdProp, onClose,
       setPeriodEnd(initialParsedData.date);
     }
 
-    // Create a line item from parsed data
+    // Create a line item from parsed data, with NDIS rate autofill
     if (initialParsedData.serviceType || initialParsedData.description || initialParsedData.hours) {
+      const searchTerm = (initialParsedData.supportCategory || initialParsedData.serviceType || initialParsedData.description || '').toLowerCase();
+      const matchingRate = ndisRates.find((r) =>
+        r.supportCategory.toLowerCase().includes(searchTerm) ||
+        r.supportItemName.toLowerCase().includes(searchTerm) ||
+        searchTerm.includes(r.supportCategory.toLowerCase())
+      );
+      const rate = matchingRate?.standardRate || 0;
+      const hours = initialParsedData.hours || 0;
+      const defaultCat = matchingRate ? getDefaultRevenueCategory(matchingRate.supportCategory) : null;
       const newItem: InvoiceLineItem = {
         id: generateId(),
         date: initialParsedData.date || '',
-        description: initialParsedData.description || initialParsedData.serviceType || '',
-        ndisLineItemCode: '',
-        supportCategory: initialParsedData.supportCategory || '',
-        hours: initialParsedData.hours || 0,
-        rate: 0,
-        amount: 0,
-        accountingCategoryId: '',
+        description: matchingRate?.supportItemName || initialParsedData.description || initialParsedData.serviceType || '',
+        ndisLineItemCode: matchingRate?.lineItemCode || '',
+        supportCategory: matchingRate?.supportCategory || initialParsedData.supportCategory || '',
+        hours,
+        rate,
+        amount: Math.round(hours * rate * 100) / 100,
+        accountingCategoryId: defaultCat?.id || '',
       };
       setLineItems([newItem]);
     }
@@ -335,13 +345,30 @@ export default function InvoiceBuilder({ modalMode, editId: editIdProp, onClose,
   const gstAmount = gstApplicable ? Math.round(subtotal * 0.1 * 100) / 100 : 0;
   const total = subtotal + gstAmount;
 
+  // ── NDIS rate search state (for line item autofill) ──
+  const [ndisSearchOpen, setNdisSearchOpen] = useState<string | null>(null); // line item id
+  const [ndisSearchQuery, setNdisSearchQuery] = useState('');
+
+  // Filter NDIS rates based on search query
+  const filteredNdisRates = useMemo(() => {
+    if (!ndisSearchQuery) return ndisRates;
+    const q = ndisSearchQuery.toLowerCase();
+    return ndisRates.filter(
+      (r) =>
+        r.supportItemName.toLowerCase().includes(q) ||
+        r.lineItemCode.toLowerCase().includes(q) ||
+        r.supportCategory.toLowerCase().includes(q)
+    );
+  }, [ndisRates, ndisSearchQuery]);
+
   // ── Line item helpers ──
   const addLineItem = () => {
+    const newId = generateId();
     setLineItems((prev) => [
       ...prev,
       {
-        id: generateId(),
-        date: '',
+        id: newId,
+        date: periodStart || '',
         description: '',
         ndisLineItemCode: '',
         supportCategory: '',
@@ -351,6 +378,34 @@ export default function InvoiceBuilder({ modalMode, editId: editIdProp, onClose,
         accountingCategoryId: '',
       },
     ]);
+    // Automatically open the NDIS rate picker for the new line
+    if (ndisRates.length > 0) {
+      setNdisSearchOpen(newId);
+      setNdisSearchQuery('');
+    }
+  };
+
+  const applyNdisRate = (itemId: string, rateId: string) => {
+    const rate = ndisRates.find((r) => r.id === rateId);
+    if (!rate) return;
+    const defaultCat = getDefaultRevenueCategory(rate.supportCategory);
+    setLineItems((prev) =>
+      prev.map((li) => {
+        if (li.id !== itemId) return li;
+        const updated = {
+          ...li,
+          description: rate.supportItemName,
+          ndisLineItemCode: rate.lineItemCode,
+          supportCategory: rate.supportCategory,
+          rate: rate.standardRate,
+          amount: Math.round(li.hours * rate.standardRate * 100) / 100,
+          accountingCategoryId: defaultCat?.id || li.accountingCategoryId || '',
+        };
+        return updated;
+      })
+    );
+    setNdisSearchOpen(null);
+    setNdisSearchQuery('');
   };
 
   const updateLineItem = (itemId: string, field: keyof InvoiceLineItem, value: string | number) => {
@@ -360,6 +415,18 @@ export default function InvoiceBuilder({ modalMode, editId: editIdProp, onClose,
         const updated = { ...li, [field]: value };
         if (field === 'hours' || field === 'rate') {
           updated.amount = Math.round(updated.hours * updated.rate * 100) / 100;
+        }
+        // When support category changes, try to autofill from NDIS rates
+        if (field === 'supportCategory' && typeof value === 'string' && value) {
+          const matchingRate = ndisRates.find((r) => r.supportCategory === value);
+          if (matchingRate) {
+            updated.ndisLineItemCode = updated.ndisLineItemCode || matchingRate.lineItemCode;
+            updated.description = updated.description || matchingRate.supportItemName;
+            if (!updated.rate) {
+              updated.rate = matchingRate.standardRate;
+              updated.amount = Math.round(updated.hours * matchingRate.standardRate * 100) / 100;
+            }
+          }
         }
         return updated;
       })
@@ -534,6 +601,54 @@ export default function InvoiceBuilder({ modalMode, editId: editIdProp, onClose,
     } else {
       const newInvoice = await addInvoice(invoiceData);
       toast.success(`Invoice ${newInvoice.invoiceNumber} created`);
+      if (modalMode && onClose) {
+        onClose();
+      } else {
+        navigate(`/invoices/${newInvoice.id}/edit`, { replace: true });
+      }
+    }
+  };
+
+  // ── Save & Submit for Approval ──
+  const handleSaveAndSubmitForApproval = async () => {
+    if (!clientId) {
+      toast.error('Please select a client');
+      return;
+    }
+    if (lineItems.length === 0) {
+      toast.error('Please add at least one line item');
+      return;
+    }
+    if (!periodStart || !periodEnd) {
+      toast.error('Please set the billing period');
+      return;
+    }
+
+    const invoiceData = {
+      clientId,
+      invoiceDate,
+      dueDate,
+      periodStart,
+      periodEnd,
+      referenceNumber,
+      notesToClient,
+      lineItems,
+      subtotal,
+      gstApplicable,
+      gstAmount,
+      total,
+      invoiceNumber,
+      status: 'Draft' as const,
+      approvalStatus: 'pending_approval' as const,
+    };
+
+    if (isEditing && existingInvoice) {
+      await updateInvoice(existingInvoice.id, invoiceData);
+      toast.success('Invoice updated and submitted for approval');
+      if (modalMode && onClose) onClose();
+    } else {
+      const newInvoice = await addInvoice(invoiceData);
+      toast.success(`Invoice ${newInvoice.invoiceNumber} submitted for approval`);
       if (modalMode && onClose) {
         onClose();
       } else {
@@ -729,116 +844,163 @@ export default function InvoiceBuilder({ modalMode, editId: editIdProp, onClose,
                 No line items yet. Add items manually or import from the roster.
               </div>
             ) : (
-              <div className="overflow-x-auto -mx-6">
-                <table className="w-full min-w-[900px]">
-                  <thead className="border-b border-sage-pale">
-                    <tr>
-                      <th className="table-header">Date</th>
-                      <th className="table-header">Description</th>
-                      <th className="table-header">NDIS Code</th>
-                      <th className="table-header">Support Category</th>
-                      <th className="table-header">Account</th>
-                      <th className="table-header w-20">Hours</th>
-                      <th className="table-header w-24">Rate ($)</th>
-                      <th className="table-header w-24">Amount ($)</th>
-                      <th className="table-header w-10"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-sage-pale">
-                    {lineItems.map((item) => (
-                      <tr key={item.id} className="group">
-                        <td className="px-4 py-2">
-                          <input
-                            type="date"
-                            value={item.date}
-                            onChange={(e) => updateLineItem(item.id, 'date', e.target.value)}
-                            className="input-field text-xs"
-                          />
-                        </td>
-                        <td className="px-4 py-2">
+              <div className="space-y-3">
+                {lineItems.map((item) => (
+                  <div key={item.id} className="relative border border-sage-light rounded-xl p-4 group hover:border-sage transition-colors">
+                    {/* Delete button */}
+                    <button
+                      onClick={() => removeLineItem(item.id)}
+                      className="absolute top-3 right-3 p-1.5 rounded-lg hover:bg-red-50 text-mid-gray hover:text-red-600 opacity-0 group-hover:opacity-100 transition-all"
+                      title="Remove line item"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+
+                    {/* Row 1: NDIS Item Selector + Date */}
+                    <div className="grid grid-cols-[1fr_140px] gap-3 mb-3">
+                      {/* NDIS Support Item - Searchable Selector */}
+                      <div className="relative">
+                        <label className="block text-[10px] font-medium text-mid-gray uppercase tracking-wider mb-1">NDIS Support Item</label>
+                        <div className="relative">
+                          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-mid-gray/50" />
                           <input
                             type="text"
-                            value={item.description}
-                            onChange={(e) => updateLineItem(item.id, 'description', e.target.value)}
-                            placeholder="Description"
-                            className="input-field text-xs"
-                          />
-                        </td>
-                        <td className="px-4 py-2">
-                          <input
-                            type="text"
-                            value={item.ndisLineItemCode}
-                            onChange={(e) => updateLineItem(item.id, 'ndisLineItemCode', e.target.value)}
-                            placeholder="e.g. 01_011_0107_1_1"
-                            className="input-field text-xs"
-                          />
-                        </td>
-                        <td className="px-4 py-2">
-                          <select
-                            value={item.supportCategory}
-                            onChange={(e) => {
-                              updateLineItem(item.id, 'supportCategory', e.target.value);
-                              // Auto-set accounting category based on support category
-                              const defaultCat = getDefaultRevenueCategory(e.target.value);
-                              if (defaultCat && !item.accountingCategoryId) {
-                                updateLineItem(item.id, 'accountingCategoryId', defaultCat.id);
-                              }
+                            value={ndisSearchOpen === item.id ? ndisSearchQuery : (item.description || '')}
+                            onFocus={() => {
+                              setNdisSearchOpen(item.id);
+                              setNdisSearchQuery(item.description || '');
                             }}
-                            className="input-field text-xs"
-                          >
-                            <option value="">Select category</option>
-                            {NDIS_SUPPORT_CATEGORIES.map((cat) => (
-                              <option key={cat} value={cat}>{cat}</option>
-                            ))}
-                          </select>
-                        </td>
-                        <td className="px-4 py-2">
-                          <select
-                            value={item.accountingCategoryId || ''}
-                            onChange={(e) => updateLineItem(item.id, 'accountingCategoryId', e.target.value)}
-                            className="input-field text-xs"
-                          >
-                            <option value="">Select account</option>
-                            {revenueCategories.map((cat) => (
-                              <option key={cat.id} value={cat.id}>{cat.code} - {cat.name}</option>
-                            ))}
-                          </select>
-                        </td>
-                        <td className="px-4 py-2">
-                          <input
-                            type="number"
-                            step="0.25"
-                            min="0"
-                            value={item.hours || ''}
-                            onChange={(e) => updateLineItem(item.id, 'hours', parseFloat(e.target.value) || 0)}
-                            className="input-field text-xs text-right"
+                            onChange={(e) => {
+                              setNdisSearchQuery(e.target.value);
+                              // Also update description directly for manual entry
+                              updateLineItem(item.id, 'description', e.target.value);
+                            }}
+                            placeholder={ndisRates.length > 0 ? 'Search NDIS items by name or code...' : 'Enter description'}
+                            className="input-field text-xs pl-8"
                           />
-                        </td>
-                        <td className="px-4 py-2">
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            value={item.rate || ''}
-                            onChange={(e) => updateLineItem(item.id, 'rate', parseFloat(e.target.value) || 0)}
-                            className="input-field text-xs text-right"
-                          />
-                        </td>
-                        <td className="px-4 py-2 text-right text-sm font-medium text-charcoal">
+                        </div>
+                        {/* NDIS Rate Dropdown */}
+                        {ndisSearchOpen === item.id && ndisRates.length > 0 && (
+                          <>
+                            <div className="fixed inset-0 z-10" onClick={() => { setNdisSearchOpen(null); setNdisSearchQuery(''); }} />
+                            <div className="absolute z-20 mt-1 w-full bg-white border border-sage-light rounded-xl shadow-lg max-h-56 overflow-y-auto">
+                              {filteredNdisRates.length === 0 ? (
+                                <div className="px-4 py-3 text-xs text-mid-gray">No matching NDIS items found</div>
+                              ) : (
+                                filteredNdisRates.map((rate) => (
+                                  <button
+                                    key={rate.id}
+                                    onClick={() => applyNdisRate(item.id, rate.id)}
+                                    className="w-full text-left px-4 py-2.5 hover:bg-sage-pale transition-colors border-b border-sage-pale/50 last:border-b-0"
+                                  >
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-xs font-medium text-charcoal truncate mr-2">{rate.supportItemName}</span>
+                                      <span className="text-xs font-semibold text-forest whitespace-nowrap">{formatCurrency(rate.standardRate)}/hr</span>
+                                    </div>
+                                    <div className="flex items-center gap-2 mt-0.5">
+                                      <span className="text-[10px] font-mono text-mid-gray">{rate.lineItemCode}</span>
+                                      <span className="text-[10px] text-mid-gray/70">{rate.supportCategory}</span>
+                                    </div>
+                                  </button>
+                                ))
+                              )}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-medium text-mid-gray uppercase tracking-wider mb-1">Date</label>
+                        <input
+                          type="date"
+                          value={item.date}
+                          onChange={(e) => updateLineItem(item.id, 'date', e.target.value)}
+                          className="input-field text-xs"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Row 2: Code, Category, Account */}
+                    <div className="grid grid-cols-3 gap-3 mb-3">
+                      <div>
+                        <label className="block text-[10px] font-medium text-mid-gray uppercase tracking-wider mb-1">NDIS Code</label>
+                        <input
+                          type="text"
+                          value={item.ndisLineItemCode}
+                          onChange={(e) => updateLineItem(item.id, 'ndisLineItemCode', e.target.value)}
+                          placeholder="e.g. 01_011_0107_1_1"
+                          className="input-field text-xs font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-medium text-mid-gray uppercase tracking-wider mb-1">Support Category</label>
+                        <select
+                          value={item.supportCategory}
+                          onChange={(e) => {
+                            updateLineItem(item.id, 'supportCategory', e.target.value);
+                            // Auto-set accounting category based on support category
+                            const defaultCat = getDefaultRevenueCategory(e.target.value);
+                            if (defaultCat && !item.accountingCategoryId) {
+                              updateLineItem(item.id, 'accountingCategoryId', defaultCat.id);
+                            }
+                          }}
+                          className="input-field text-xs"
+                        >
+                          <option value="">Select category</option>
+                          {NDIS_SUPPORT_CATEGORIES.map((cat) => (
+                            <option key={cat} value={cat}>{cat}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-medium text-mid-gray uppercase tracking-wider mb-1">Account</label>
+                        <select
+                          value={item.accountingCategoryId || ''}
+                          onChange={(e) => updateLineItem(item.id, 'accountingCategoryId', e.target.value)}
+                          className="input-field text-xs"
+                        >
+                          <option value="">Select account</option>
+                          {revenueCategories.map((cat) => (
+                            <option key={cat.id} value={cat.id}>{cat.code} - {cat.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Row 3: Hours, Rate, Amount */}
+                    <div className="grid grid-cols-[1fr_1fr_1fr] gap-3">
+                      <div>
+                        <label className="block text-[10px] font-medium text-mid-gray uppercase tracking-wider mb-1">Hours / Qty</label>
+                        <input
+                          type="number"
+                          step="0.25"
+                          min="0"
+                          value={item.hours || ''}
+                          onChange={(e) => updateLineItem(item.id, 'hours', parseFloat(e.target.value) || 0)}
+                          placeholder="0"
+                          className="input-field text-xs text-right"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-medium text-mid-gray uppercase tracking-wider mb-1">Rate ($)</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={item.rate || ''}
+                          onChange={(e) => updateLineItem(item.id, 'rate', parseFloat(e.target.value) || 0)}
+                          placeholder="0.00"
+                          className="input-field text-xs text-right"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-medium text-mid-gray uppercase tracking-wider mb-1">Amount</label>
+                        <div className="input-field text-xs text-right bg-sage-pale/30 font-semibold text-forest flex items-center justify-end">
                           {formatCurrency(item.amount)}
-                        </td>
-                        <td className="px-4 py-2">
-                          <button
-                            onClick={() => removeLineItem(item.id)}
-                            className="p-1 rounded hover:bg-red-50 text-mid-gray hover:text-red-600 opacity-0 group-hover:opacity-100 transition-all"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
 
@@ -1027,6 +1189,14 @@ export default function InvoiceBuilder({ modalMode, editId: editIdProp, onClose,
             <button onClick={handleSave} className="btn-primary flex-1">
               <Save size={16} />
               Save Invoice
+            </button>
+            <button
+              onClick={handleSaveAndSubmitForApproval}
+              className="flex-1 px-4 py-2 rounded-lg font-medium text-white bg-amber-600 hover:bg-amber-700 transition-colors flex items-center justify-center gap-2"
+              title="Save and submit this invoice to the participant for approval"
+            >
+              <Eye size={16} />
+              Submit for Approval
             </button>
           </div>
         </div>

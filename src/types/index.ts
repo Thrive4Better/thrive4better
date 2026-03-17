@@ -141,6 +141,8 @@ export interface ShiftNote {
   noteType: ShiftNoteType;
 }
 
+export type InvoiceApprovalStatus = 'draft' | 'pending_approval' | 'approved' | 'rejected' | 'sent';
+
 export interface Invoice {
   id: string;
   invoiceNumber: string;
@@ -157,6 +159,10 @@ export interface Invoice {
   gstAmount: number;
   total: number;
   status: 'Draft' | 'Sent' | 'Paid' | 'Overdue' | 'Void' | 'Archived';
+  approvalStatus?: InvoiceApprovalStatus;
+  approvedBy?: string;
+  approvedAt?: string;
+  approvalNotes?: string;
   createdAt: string;
 }
 

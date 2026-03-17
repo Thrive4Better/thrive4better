@@ -34,18 +34,47 @@ import { parseISO, isWithinInterval, startOfWeek, endOfWeek, startOfMonth, endOf
 import toast from 'react-hot-toast';
 import { pdf } from '@react-pdf/renderer';
 import InvoicePdf from './InvoicePdf';
-import type { Invoice, Client } from '@/types';
+import type { Invoice, InvoiceApprovalStatus, Client } from '@/types';
 
 type InvoiceStatus = 'All' | 'Draft' | 'Sent' | 'Paid' | 'Overdue' | 'Void' | 'Archived';
+type ApprovalFilter = 'all' | 'pending_approval' | 'approved' | 'rejected';
 type SortField = 'invoiceNumber' | 'clientName' | 'periodStart' | 'lineItems' | 'subtotal' | 'gstAmount' | 'total' | 'dueDate';
+
+const APPROVAL_LABELS: Record<InvoiceApprovalStatus, string> = {
+  draft: 'Draft',
+  pending_approval: 'Pending Approval',
+  approved: 'Approved',
+  rejected: 'Rejected',
+  sent: 'Sent to Plan Manager',
+};
+
+function ApprovalBadge({ status }: { status?: InvoiceApprovalStatus }) {
+  if (!status || status === 'draft') return null;
+  const styles: Record<string, string> = {
+    pending_approval: 'bg-amber-100 text-amber-800 border-amber-200',
+    approved: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+    rejected: 'bg-red-100 text-red-700 border-red-200',
+    sent: 'bg-blue-100 text-blue-800 border-blue-200',
+  };
+  return (
+    <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full border ${styles[status] || 'bg-gray-100 text-gray-600 border-gray-200'}`}>
+      {status === 'pending_approval' && <Clock size={11} />}
+      {status === 'approved' && <CheckCircle2 size={11} />}
+      {status === 'rejected' && <AlertCircle size={11} />}
+      {status === 'sent' && <Send size={11} />}
+      {APPROVAL_LABELS[status]}
+    </span>
+  );
+}
 type SortDir = 'asc' | 'desc';
 
 export default function InvoiceList() {
   const navigate = useNavigate();
   const { invoices, clients, updateInvoice, getClientById } = useStore();
-  const { session } = useAuth();
+  const { session, profile, role } = useAuth();
 
   const [activeTab, setActiveTab] = useState<InvoiceStatus>('All');
+  const [approvalFilter, setApprovalFilter] = useState<ApprovalFilter>('all');
   const [sortField, setSortField] = useState<SortField>('invoiceNumber');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [showArchived, setShowArchived] = useState(false);
@@ -68,6 +97,80 @@ export default function InvoiceList() {
   const [ratesModalOpen, setRatesModalOpen] = useState(false);
 
   const [nlParsedForBuilder, setNlParsedForBuilder] = useState<any>(null);
+
+  // ── Approval workflow state ──
+  const [approvalModalOpen, setApprovalModalOpen] = useState(false);
+  const [approvalInvoiceId, setApprovalInvoiceId] = useState<string | null>(null);
+  const [approvalAction, setApprovalAction] = useState<'approve' | 'reject'>('approve');
+  const [approvalNotes, setApprovalNotes] = useState('');
+
+  const canApprove = role === 'admin' || role === 'manager' || role === 'client';
+
+  const pendingApprovalCount = useMemo(
+    () => invoices.filter((i) => i.approvalStatus === 'pending_approval').length,
+    [invoices],
+  );
+
+  const handleSubmitForApproval = (id: string) => {
+    setConfirmModal({
+      open: true,
+      title: 'Submit for Approval?',
+      message: 'This will send the invoice to the participant for approval before it can be sent to the plan manager.',
+      onConfirm: async () => {
+        await updateInvoice(id, { approvalStatus: 'pending_approval' });
+        toast.success('Invoice submitted for approval');
+        setConfirmModal((m) => ({ ...m, open: false }));
+      },
+    });
+  };
+
+  const openApprovalModal = (id: string, action: 'approve' | 'reject') => {
+    setApprovalInvoiceId(id);
+    setApprovalAction(action);
+    setApprovalNotes('');
+    setApprovalModalOpen(true);
+  };
+
+  const handleApprovalConfirm = async () => {
+    if (!approvalInvoiceId) return;
+    const now = new Date().toISOString();
+    const approverName = profile?.fullName || 'Unknown';
+
+    if (approvalAction === 'approve') {
+      await updateInvoice(approvalInvoiceId, {
+        approvalStatus: 'approved',
+        approvedBy: approverName,
+        approvedAt: now,
+        approvalNotes: approvalNotes || undefined,
+      });
+      toast.success('Invoice approved');
+    } else {
+      await updateInvoice(approvalInvoiceId, {
+        approvalStatus: 'rejected',
+        approvedBy: approverName,
+        approvedAt: now,
+        approvalNotes: approvalNotes || 'Rejected',
+      });
+      toast.success('Invoice rejected');
+    }
+
+    setApprovalModalOpen(false);
+    setApprovalInvoiceId(null);
+    setApprovalNotes('');
+  };
+
+  const handleSendToManager = (id: string) => {
+    setConfirmModal({
+      open: true,
+      title: 'Send to Plan Manager?',
+      message: 'This invoice has been approved. It will now be marked as sent to the plan manager/coordinator.',
+      onConfirm: async () => {
+        await updateInvoice(id, { approvalStatus: 'sent', status: 'Sent' });
+        toast.success('Invoice sent to plan manager');
+        setConfirmModal((m) => ({ ...m, open: false }));
+      },
+    });
+  };
 
   // ── PDF Download ──
   const handleDownloadPdf = async (invoice: Invoice, client: Client | undefined) => {
@@ -145,7 +248,7 @@ export default function InvoiceList() {
             throw new Error(data.error || 'Failed to send invoice');
           }
 
-          updateInvoice(invoice.id, { status: 'Sent' });
+          updateInvoice(invoice.id, { status: 'Sent', approvalStatus: invoice.approvalStatus === 'approved' ? 'sent' : invoice.approvalStatus });
           toast.success(data.message || `Invoice ${invoice.invoiceNumber} sent successfully`);
         } catch (err) {
           console.error('Send invoice error:', err);
@@ -213,6 +316,11 @@ export default function InvoiceList() {
       list = list.filter((i) => i.status === activeTab);
     }
 
+    // Approval filter
+    if (approvalFilter !== 'all') {
+      list = list.filter((i) => i.approvalStatus === approvalFilter);
+    }
+
     // Keyword search
     if (invoiceSearch.trim()) {
       const q = invoiceSearch.toLowerCase();
@@ -264,7 +372,7 @@ export default function InvoiceList() {
     });
 
     return list;
-  }, [invoices, activeTab, sortField, sortDir, getClientById, showArchived, invoiceSearch]);
+  }, [invoices, activeTab, sortField, sortDir, getClientById, showArchived, invoiceSearch, approvalFilter]);
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
@@ -368,10 +476,10 @@ export default function InvoiceList() {
   );
 
   const kpiCards = [
-    { label: 'Total Outstanding', value: kpis.outstanding, icon: DollarSign, color: 'text-forest' },
-    { label: 'Overdue', value: kpis.overdue, icon: AlertCircle, color: 'text-burgundy' },
-    { label: 'Due This Week', value: kpis.dueThisWeek, icon: Clock, color: 'text-amber-600' },
-    { label: 'Paid This Month', value: kpis.paidThisMonth, icon: CheckCircle2, color: 'text-green-600' },
+    { label: 'Total Outstanding', value: kpis.outstanding, icon: DollarSign, color: 'text-forest', isCount: false },
+    { label: 'Overdue', value: kpis.overdue, icon: AlertCircle, color: 'text-burgundy', isCount: false },
+    { label: 'Pending Approval', value: pendingApprovalCount, icon: Clock, color: 'text-amber-600', isCount: true },
+    { label: 'Paid This Month', value: kpis.paidThisMonth, icon: CheckCircle2, color: 'text-green-600', isCount: false },
   ];
 
   return (
@@ -385,7 +493,7 @@ export default function InvoiceList() {
         <div className="flex flex-wrap gap-2 sm:gap-3">
           <button
             onClick={() => {
-              const headers = ['Invoice Number', 'Client Name', 'Invoice Date', 'Due Date', 'Status', 'Subtotal', 'GST', 'Total'];
+              const headers = ['Invoice Number', 'Client Name', 'Invoice Date', 'Due Date', 'Status', 'Approval Status', 'Subtotal', 'GST', 'Total'];
               const rows = filteredInvoices.map((inv) => {
                 const c = getClientById(inv.clientId);
                 const clientName = c ? `${c.firstName} ${c.lastName}` : 'Unknown';
@@ -395,6 +503,7 @@ export default function InvoiceList() {
                   inv.invoiceDate,
                   inv.dueDate,
                   inv.status,
+                  inv.approvalStatus ? APPROVAL_LABELS[inv.approvalStatus] : '',
                   fmtCurrencyPlain(inv.subtotal),
                   fmtCurrencyPlain(inv.gstAmount),
                   fmtCurrencyPlain(inv.total),
@@ -433,13 +542,22 @@ export default function InvoiceList() {
       {/* KPI Strip */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {kpiCards.map((kpi) => (
-          <div key={kpi.label} className="card flex items-center gap-4">
+          <div
+            key={kpi.label}
+            className={cn(
+              'card flex items-center gap-4',
+              kpi.label === 'Pending Approval' && pendingApprovalCount > 0 && 'ring-2 ring-amber-300 cursor-pointer',
+            )}
+            onClick={kpi.label === 'Pending Approval' && pendingApprovalCount > 0 ? () => setApprovalFilter('pending_approval') : undefined}
+          >
             <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center bg-sage-pale', kpi.color)}>
               <kpi.icon size={20} />
             </div>
             <div>
               <p className="text-xs text-mid-gray font-medium">{kpi.label}</p>
-              <p className="text-lg font-bold text-charcoal">{formatCurrency(kpi.value)}</p>
+              <p className="text-lg font-bold text-charcoal">
+                {kpi.isCount ? kpi.value : formatCurrency(kpi.value)}
+              </p>
             </div>
           </div>
         ))}
@@ -477,6 +595,16 @@ export default function InvoiceList() {
             />
             Show archived/void
           </label>
+          <select
+            value={approvalFilter}
+            onChange={(e) => setApprovalFilter(e.target.value as ApprovalFilter)}
+            className="text-sm border border-sage-light rounded-lg px-2 py-1.5 text-charcoal focus:ring-forest focus:border-forest bg-white"
+          >
+            <option value="all">All Approval States</option>
+            <option value="pending_approval">Pending Approval ({invoices.filter(i => i.approvalStatus === 'pending_approval').length})</option>
+            <option value="approved">Approved ({invoices.filter(i => i.approvalStatus === 'approved').length})</option>
+            <option value="rejected">Rejected ({invoices.filter(i => i.approvalStatus === 'rejected').length})</option>
+          </select>
           {selectedIds.size > 0 && (
             <>
               <button onClick={() => handleBulkAction('Sent')} className="btn-secondary text-sm min-h-[44px]">
@@ -522,6 +650,7 @@ export default function InvoiceList() {
                   <SortHeader field="gstAmount">GST</SortHeader>
                   <SortHeader field="total">Total</SortHeader>
                   <th className="table-header">Status</th>
+                  <th className="table-header">Approval</th>
                   <SortHeader field="dueDate">Due Date</SortHeader>
                   <th className="table-header text-right">Actions</th>
                 </tr>
@@ -558,6 +687,9 @@ export default function InvoiceList() {
                       <td className="table-cell">
                         <StatusBadge status={invoice.status} />
                       </td>
+                      <td className="table-cell">
+                        <ApprovalBadge status={invoice.approvalStatus} />
+                      </td>
                       <td className="table-cell">{formatDate(invoice.dueDate)}</td>
                       <td className="table-cell">
                         <div className="flex items-center justify-end gap-1">
@@ -584,13 +716,50 @@ export default function InvoiceList() {
                           >
                             {sendingId === invoice.id ? <Loader2 size={15} className="animate-spin" /> : <Mail size={15} />}
                           </button>
+                          {/* Approval workflow buttons */}
+                          {invoice.status === 'Draft' && (!invoice.approvalStatus || invoice.approvalStatus === 'draft' || invoice.approvalStatus === 'rejected') && (
+                            <button
+                              onClick={() => handleSubmitForApproval(invoice.id)}
+                              className="p-1.5 rounded-lg hover:bg-amber-50 text-mid-gray hover:text-amber-600 transition-colors"
+                              title="Submit for Approval"
+                            >
+                              <Eye size={15} />
+                            </button>
+                          )}
+                          {canApprove && invoice.approvalStatus === 'pending_approval' && (
+                            <>
+                              <button
+                                onClick={() => openApprovalModal(invoice.id, 'approve')}
+                                className="p-1.5 rounded-lg hover:bg-green-50 text-mid-gray hover:text-green-600 transition-colors"
+                                title="Approve Invoice"
+                              >
+                                <CheckCircle2 size={15} />
+                              </button>
+                              <button
+                                onClick={() => openApprovalModal(invoice.id, 'reject')}
+                                className="p-1.5 rounded-lg hover:bg-red-50 text-mid-gray hover:text-red-500 transition-colors"
+                                title="Reject Invoice"
+                              >
+                                <X size={15} />
+                              </button>
+                            </>
+                          )}
+                          {invoice.approvalStatus === 'approved' && invoice.status !== 'Sent' && invoice.status !== 'Paid' && (
+                            <button
+                              onClick={() => handleSendToManager(invoice.id)}
+                              className="p-1.5 rounded-lg hover:bg-blue-50 text-mid-gray hover:text-blue-600 transition-colors"
+                              title="Send to Plan Manager"
+                            >
+                              <Send size={15} />
+                            </button>
+                          )}
                           {invoice.status !== 'Paid' && invoice.status !== 'Void' && invoice.status !== 'Archived' && (
                             <button
                               onClick={() => handleMarkAsPaid(invoice.id)}
                               className="p-1.5 rounded-lg hover:bg-green-50 text-mid-gray hover:text-green-600 transition-colors"
                               title="Mark as Paid"
                             >
-                              <CheckCircle2 size={15} />
+                              <CreditCard size={15} />
                             </button>
                           )}
                           {invoice.status !== 'Void' && invoice.status !== 'Archived' && (
@@ -686,6 +855,92 @@ export default function InvoiceList() {
             {/* Modal Body */}
             <div className="flex-1 overflow-y-auto p-6">
               <NdisRates modalMode onClose={() => setRatesModalOpen(false)} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Invoice Approval Modal */}
+      {approvalModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="fixed inset-0 bg-black/30 backdrop-blur-sm" onClick={() => setApprovalModalOpen(false)} />
+          <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 overflow-hidden">
+            <div className={cn(
+              'px-6 py-4',
+              approvalAction === 'approve' ? 'bg-emerald-50 border-b border-emerald-100' : 'bg-red-50 border-b border-red-100',
+            )}>
+              <h2 className={cn(
+                'text-lg font-semibold',
+                approvalAction === 'approve' ? 'text-emerald-800' : 'text-red-800',
+              )}>
+                {approvalAction === 'approve' ? 'Approve Invoice' : 'Reject Invoice'}
+              </h2>
+              <p className="text-sm mt-1 opacity-70">
+                {approvalAction === 'approve'
+                  ? 'Once approved, this invoice can be sent to the plan manager.'
+                  : 'Please provide a reason for rejecting this invoice.'}
+              </p>
+            </div>
+            <div className="p-6 space-y-4">
+              {(() => {
+                const inv = invoices.find((i) => i.id === approvalInvoiceId);
+                const client = inv ? getClientById(inv.clientId) : undefined;
+                return inv ? (
+                  <div className="bg-sage-pale/50 rounded-lg p-3 text-sm space-y-1">
+                    <div className="flex justify-between">
+                      <span className="text-mid-gray">Invoice</span>
+                      <span className="font-medium text-charcoal">{inv.invoiceNumber}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-mid-gray">Client</span>
+                      <span className="font-medium text-charcoal">
+                        {client ? `${client.firstName} ${client.lastName}` : 'Unknown'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-mid-gray">Total</span>
+                      <span className="font-bold text-charcoal">{formatCurrency(inv.total)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-mid-gray">Period</span>
+                      <span className="text-charcoal">{formatDate(inv.periodStart)} - {formatDate(inv.periodEnd)}</span>
+                    </div>
+                  </div>
+                ) : null;
+              })()}
+              <div>
+                <label className="block text-sm font-medium text-charcoal mb-1">
+                  {approvalAction === 'approve' ? 'Notes (optional)' : 'Reason for rejection'}
+                </label>
+                <textarea
+                  value={approvalNotes}
+                  onChange={(e) => setApprovalNotes(e.target.value)}
+                  rows={3}
+                  className="w-full border border-sage-light rounded-lg px-3 py-2 text-sm focus:ring-forest focus:border-forest"
+                  placeholder={approvalAction === 'approve' ? 'Any notes about this approval...' : 'e.g. Hours do not match the agreed schedule...'}
+                  required={approvalAction === 'reject'}
+                />
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setApprovalModalOpen(false)}
+                  className="btn-secondary flex-1"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleApprovalConfirm}
+                  disabled={approvalAction === 'reject' && !approvalNotes.trim()}
+                  className={cn(
+                    'flex-1 px-4 py-2 rounded-lg font-medium text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
+                    approvalAction === 'approve'
+                      ? 'bg-emerald-600 hover:bg-emerald-700'
+                      : 'bg-red-600 hover:bg-red-700',
+                  )}
+                >
+                  {approvalAction === 'approve' ? 'Approve' : 'Reject'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
