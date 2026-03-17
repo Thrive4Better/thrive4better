@@ -55,6 +55,14 @@ export const ALL_PERMISSIONS = {
   'reports.view': 'View Reports',
   'reports.export': 'Export Reports',
 
+  // Documents
+  'documents.view': 'View Documents',
+  'documents.upload': 'Upload Documents',
+
+  // Payroll
+  'payroll.view': 'View Payroll',
+  'payroll.run': 'Run Payroll',
+
   // Admin
   'admin.users': 'Manage Users',
   'admin.settings': 'System Settings',
@@ -104,8 +112,16 @@ export const PERMISSION_GROUPS: { label: string; permissions: Permission[] }[] =
     permissions: ['compliance.view', 'compliance.edit', 'incidents.view', 'incidents.create'],
   },
   {
+    label: 'Documents',
+    permissions: ['documents.view', 'documents.upload'],
+  },
+  {
     label: 'Reports',
     permissions: ['reports.view', 'reports.export'],
+  },
+  {
+    label: 'Payroll',
+    permissions: ['payroll.view', 'payroll.run'],
   },
   {
     label: 'Admin',
@@ -116,7 +132,7 @@ export const PERMISSION_GROUPS: { label: string; permissions: Permission[] }[] =
 /** Default permissions per role */
 export const ROLE_DEFAULTS: Record<UserRole, Permission[]> = {
   admin: [...ALL_PERMISSION_KEYS],
-  manager: ALL_PERMISSION_KEYS.filter((p) => !p.startsWith('admin.')),
+  manager: ALL_PERMISSION_KEYS.filter((p) => !p.startsWith('admin.') && p !== 'payroll.run'),
   staff: [
     'dashboard.view',
     'clients.view',
@@ -125,17 +141,21 @@ export const ROLE_DEFAULTS: Record<UserRole, Permission[]> = {
     'timesheets.view',
     'incidents.create',
     'incidents.view',
+    'documents.view',
   ],
   client: [
     'dashboard.view',
     'careplans.view',
+    'documents.view',
   ],
+  guest: [],
 };
 
 /**
  * Resolve the effective permissions for a user.
  * If custom permissions are set (non-null array in profile), use those.
  * Otherwise fall back to role defaults.
+ * Guest role with no custom permissions gets an empty array (no access).
  */
 export function resolvePermissions(
   role: UserRole,
@@ -144,5 +164,53 @@ export function resolvePermissions(
   if (customPermissions && customPermissions.length > 0) {
     return customPermissions;
   }
-  return ROLE_DEFAULTS[role] ?? ROLE_DEFAULTS.staff;
+  return ROLE_DEFAULTS[role] ?? [];
 }
+
+/**
+ * Map a route path to the permission(s) required to access it.
+ * Returns null if the route is accessible to all authenticated users.
+ */
+export const ROUTE_PERMISSIONS: Record<string, Permission | Permission[]> = {
+  '/dashboard': 'dashboard.view',
+  '/clients': 'clients.view',
+  '/clients/care-plans': 'careplans.view',
+  '/roster': 'roster.view',
+  '/roster/shifts': 'roster.view',
+  '/roster/carers': 'carers.view',
+  '/roster/timesheets': 'timesheets.approve',
+  '/invoices': 'invoices.view',
+  '/invoices/new': 'invoices.create',
+  '/invoices/rates': 'invoices.view',
+  '/invoices/claims': 'invoices.view',
+  '/contractor-invoices': 'invoices.view',
+  '/compliance': 'compliance.view',
+  '/incidents': 'incidents.view',
+  '/reports': 'reports.view',
+  '/documents': 'documents.view',
+  '/payroll': 'payroll.view',
+  '/payroll/new': 'payroll.run',
+  '/accounting/chart-of-accounts': 'accounting.view',
+  '/accounting/transactions': 'accounting.view',
+  '/accounting/reconciliation': 'accounting.view',
+  '/accounting/bas': 'accounting.bas',
+  '/accounting/profit-and-loss': 'accounting.view',
+  '/accounting/balance-sheet': 'accounting.view',
+  '/accounting/cash-flow': 'accounting.view',
+  '/admin/users': 'admin.users',
+  '/admin/onboarding': 'admin.users',
+  '/settings': 'admin.settings',
+  // Client portal routes
+  '/my-profile': 'dashboard.view',
+  '/my-care-plan': 'careplans.view',
+  '/rate-activities': 'dashboard.view',
+  // Staff routes
+  '/my-shifts': 'roster.view',
+  '/my-timesheet': 'timesheets.view',
+  '/log-shift': 'roster.view',
+  '/contractor-invoice': 'invoices.view',
+  // AI tools - accessible to anyone with dashboard access
+  '/tools/ideas': 'dashboard.view',
+  '/tools/idea-generator': 'dashboard.view',
+  '/tools/support-plans': 'dashboard.view',
+};

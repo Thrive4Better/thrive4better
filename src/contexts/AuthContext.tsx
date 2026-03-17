@@ -282,14 +282,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     log('Signing out');
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      logError('Sign out failed:', error.message);
-      throw error;
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        logError('Sign out failed:', error.message);
+        // Still clear local state even if Supabase call fails
+      }
+    } catch (err) {
+      logError('Sign out crashed:', err);
+      // Still clear local state even if Supabase call crashes
     }
+    // Always clear state regardless of API result
     setProfile(null);
     setUser(null);
     setSession(null);
+    // Clear any residual localStorage/sessionStorage auth data
+    try {
+      localStorage.removeItem('supabase.auth.token');
+      Object.keys(localStorage).forEach((key) => {
+        if (key.startsWith('sb-') && key.includes('-auth-token')) {
+          localStorage.removeItem(key);
+        }
+      });
+    } catch (err) {
+      logError('Failed to clear localStorage:', err);
+    }
+    toast.success('Signed out successfully');
     log('Signed out');
   };
 
@@ -300,7 +318,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const role: UserRole = profile?.role ?? 'staff' as UserRole;
+  const role: UserRole = profile?.role ?? 'guest' as UserRole;
   const carerId = profile?.carerId ?? null;
 
   return (

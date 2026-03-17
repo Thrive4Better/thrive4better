@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type {
   Client, Carer, Shift, Invoice, CarePlan, NdisRate, ClientDocument,
   SessionNote, IncidentReport, Timesheet, ComplianceRecord, ClaimSubmission,
-  ActivityReview, ContractorInvoice, RemittanceAdvice,
+  ActivityReview, ContractorInvoice, RemittanceAdvice, ShiftNote,
 } from '@/types';
 import { getNextInvoiceNumber } from '@/lib/utils';
 import * as db from '@/lib/supabase-data';
@@ -24,6 +24,7 @@ interface AppState {
   activityReviews: ActivityReview[];
   contractorInvoices: ContractorInvoice[];
   remittanceAdvices: RemittanceAdvice[];
+  shiftNotes: ShiftNote[];
 
   // State
   isInitialized: boolean;
@@ -104,6 +105,12 @@ interface AppState {
   deleteRemittanceAdvice: (id: string) => void;
   getRemittanceAdvicesByCarer: (carerId: string) => RemittanceAdvice[];
 
+  // Shift notes (localStorage-backed)
+  addShiftNote: (note: ShiftNote) => void;
+  deleteShiftNote: (id: string) => void;
+  getShiftNotesByShift: (shiftId: string) => ShiftNote[];
+  getShiftNotesByClient: (clientId: string) => ShiftNote[];
+
   // Helpers
   getClientById: (id: string) => Client | undefined;
   getCarerById: (id: string) => Carer | undefined;
@@ -138,6 +145,7 @@ export const useStore = create<AppState>()((set, get) => ({
   activityReviews: [],
   contractorInvoices: JSON.parse(localStorage.getItem('t4b_contractor_invoices') || '[]') as ContractorInvoice[],
   remittanceAdvices: JSON.parse(localStorage.getItem('t4b_remittance_advices') || '[]') as RemittanceAdvice[],
+  shiftNotes: JSON.parse(localStorage.getItem('t4b_shift_notes') || '[]') as ShiftNote[],
   isInitialized: false,
   isLoading: false,
 
@@ -388,6 +396,24 @@ export const useStore = create<AppState>()((set, get) => ({
     });
   },
   getRemittanceAdvicesByCarer: (carerId) => get().remittanceAdvices.filter((a) => a.carerId === carerId),
+
+  // ── Shift Notes (localStorage) ──
+  addShiftNote: (note) => {
+    set((s) => {
+      const updated = [...s.shiftNotes, note];
+      localStorage.setItem('t4b_shift_notes', JSON.stringify(updated));
+      return { shiftNotes: updated };
+    });
+  },
+  deleteShiftNote: (id) => {
+    set((s) => {
+      const updated = s.shiftNotes.filter((n) => n.id !== id);
+      localStorage.setItem('t4b_shift_notes', JSON.stringify(updated));
+      return { shiftNotes: updated };
+    });
+  },
+  getShiftNotesByShift: (shiftId) => get().shiftNotes.filter((n) => n.shiftId === shiftId),
+  getShiftNotesByClient: (clientId) => get().shiftNotes.filter((n) => n.clientId === clientId),
 
   // ── Helpers ──
   getClientById: (id) => get().clients.find((c) => c.id === id),

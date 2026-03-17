@@ -2,14 +2,19 @@ import { useEffect } from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useStore } from '@/stores/useStore';
+import { usePermissions } from '@/hooks/usePermissions';
 import type { UserRole } from '@/types';
+import type { Permission } from '@/lib/permissions';
+import { ROUTE_PERMISSIONS } from '@/lib/permissions';
 
 interface Props {
   allowedRoles?: UserRole[];
+  requiredPermission?: Permission;
 }
 
-export default function ProtectedRoute({ allowedRoles }: Props) {
-  const { user, loading: authLoading, role } = useAuth();
+export default function ProtectedRoute({ allowedRoles, requiredPermission }: Props) {
+  const { user, loading: authLoading, role, profile } = useAuth();
+  const { permissions, hasPermission, hasAnyPermission } = usePermissions();
   const initialize = useStore((s) => s.initialize);
   const isInitialized = useStore((s) => s.isInitialized);
   const isLoading = useStore((s) => s.isLoading);
@@ -33,8 +38,9 @@ export default function ProtectedRoute({ allowedRoles }: Props) {
       isInitialized,
       isLoading,
       role,
+      permissionCount: permissions.length,
     });
-  }, [authLoading, user, isInitialized, isLoading, role, location.pathname]);
+  }, [authLoading, user, isInitialized, isLoading, role, location.pathname, permissions.length]);
 
   if (authLoading) {
     return (
@@ -65,9 +71,51 @@ export default function ProtectedRoute({ allowedRoles }: Props) {
     );
   }
 
+  // Check if user account is deactivated
+  if (profile && !profile.isActive) {
+    console.log('[ProtectedRoute] User is deactivated');
+    return <Navigate to="/no-access" replace />;
+  }
+
+  // Guest with zero permissions -> no access page
+  if (role === 'guest' && permissions.length === 0) {
+    console.log('[ProtectedRoute] Guest with no permissions, redirecting to /no-access');
+    return <Navigate to="/no-access" replace />;
+  }
+
+  // Check explicit requiredPermission prop
+  if (requiredPermission && !hasPermission(requiredPermission)) {
+    console.log('[ProtectedRoute] Missing required permission:', requiredPermission);
+    return <Navigate to="/no-access" replace />;
+  }
+
+  // Check allowedRoles (legacy support, still works alongside permissions)
   if (allowedRoles && !allowedRoles.includes(role)) {
-    console.log('[ProtectedRoute] Role not allowed:', role, 'required:', allowedRoles);
-    return <Navigate to="/dashboard" replace />;
+    // Also allow if the user has the route's permission even if role doesn't match
+    const routePerm = ROUTE_PERMISSIONS[location.pathname];
+    const hasRoutePerm = routePerm
+      ? Array.isArray(routePerm)
+        ? hasAnyPermission(routePerm)
+        : hasPermission(routePerm)
+      : false;
+
+    if (!hasRoutePerm) {
+      console.log('[ProtectedRoute] Role not allowed:', role, 'required:', allowedRoles);
+      return <Navigate to="/no-access" replace />;
+    }
+  }
+
+  // Check route-level permissions based on current path
+  const routePerm = ROUTE_PERMISSIONS[location.pathname];
+  if (routePerm) {
+    const allowed = Array.isArray(routePerm)
+      ? hasAnyPermission(routePerm)
+      : hasPermission(routePerm);
+
+    if (!allowed) {
+      console.log('[ProtectedRoute] Route permission denied for:', location.pathname, 'requires:', routePerm);
+      return <Navigate to="/no-access" replace />;
+    }
   }
 
   return <Outlet />;

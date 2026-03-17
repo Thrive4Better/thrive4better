@@ -8,6 +8,10 @@ import {
   Timer,
   CheckSquare,
   Square,
+  Sparkles,
+  X,
+  Check,
+  Loader2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -17,6 +21,20 @@ import { usePermissions } from '@/hooks/usePermissions';
 import type { Timesheet, TimesheetStatus } from '@/types';
 import { cn, formatDate, formatTime } from '@/lib/utils';
 import EmptyState from '@/components/ui/EmptyState';
+import TableFilter from '@/components/ui/TableFilter';
+
+// ── Parsed Timesheet Data ──
+interface ParsedTimesheetData {
+  clientName: string | null;
+  serviceType: string | null;
+  date: string | null;
+  startTime: string | null;
+  endTime: string | null;
+  hours: number | null;
+  description: string | null;
+  supportCategory: string | null;
+  confidence: number;
+}
 
 // ── Constants ──
 
@@ -37,18 +55,164 @@ export default function Timesheets() {
   const {
     timesheets,
     carers,
+    clients,
     shifts,
     addTimesheet,
+    addShift,
     updateTimesheet,
     getCarerById,
   } = useStore();
-  const { profile } = useAuth();
+  const { profile, session } = useAuth();
   const { canApproveTimesheets } = usePermissions();
 
   // Filters
+  const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [filterCarerId, setFilterCarerId] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+
+  // ── AI Natural Language Input ──
+  const [nlInput, setNlInput] = useState('');
+  const [nlParsing, setNlParsing] = useState(false);
+  const [nlParsed, setNlParsed] = useState<ParsedTimesheetData | null>(null);
+  const [nlCreating, setNlCreating] = useState(false);
+
+  const handleNlParse = async () => {
+    if (!nlInput.trim()) return;
+
+    setNlParsing(true);
+    setNlParsed(null);
+
+    try {
+      const token = session?.access_token;
+      if (!token) {
+        toast.error('You must be logged in to use AI parsing');
+        return;
+      }
+
+      const clientNames = clients
+        .filter((c: any) => c.status === 'Active')
+        .map((c: any) => `${c.firstName} ${c.lastName}`);
+
+      const res = await fetch('/api/parse-invoice', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ text: nlInput, clientNames }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to parse input');
+      }
+
+      setNlParsed(data.parsed);
+      toast.success('Parsed successfully! Review the details below.');
+    } catch (err) {
+      console.error('Parse error:', err);
+      toast.error(err instanceof Error ? err.message : 'Failed to parse input');
+    } finally {
+      setNlParsing(false);
+    }
+  };
+
+  const handleNlKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleNlParse();
+    }
+  };
+
+  const handleCreateTimesheetFromParsed = async () => {
+    if (!nlParsed) return;
+
+    setNlCreating(true);
+    try {
+      // Find matching carer (use first carer or profile's carer)
+      const carerId = profile?.carerId || (carers.length > 0 ? carers[0].id : '');
+      if (!carerId) {
+        toast.error('No carer profile found. Please set up a carer first.');
+        setNlCreating(false);
+        return;
+      }
+
+      // Find matching client
+      const matchedClient = nlParsed.clientName
+        ? clients.find((c: any) => {
+            const fullName = `${c.firstName} ${c.lastName}`.toLowerCase();
+            return fullName.includes((nlParsed.clientName || '').toLowerCase());
+          })
+        : null;
+
+      const clientId = matchedClient?.id || (clients.length > 0 ? clients[0].id : '');
+
+      // Build clock in/out from parsed times and date
+      const dateStr = nlParsed.date || format(new Date(), 'yyyy-MM-dd');
+      const clockIn = nlParsed.startTime
+        ? new Date(`${dateStr}T${nlParsed.startTime}:00`).toISOString()
+        : new Date(`${dateStr}T09:00:00`).toISOString();
+      const clockOut = nlParsed.endTime
+        ? new Date(`${dateStr}T${nlParsed.endTime}:00`).toISOString()
+        : undefined;
+
+      const totalHours = nlParsed.hours || (clockOut
+        ? Math.round(((new Date(clockOut).getTime() - new Date(clockIn).getTime()) / 3600000) * 100) / 100
+        : undefined);
+
+      // Create a shift first (timesheet requires a shiftId)
+      const shiftData = {
+        clientId,
+        carerId,
+        date: dateStr,
+        startTime: nlParsed.startTime || '09:00',
+        endTime: nlParsed.endTime || '17:00',
+        serviceType: (nlParsed.serviceType as any) || 'Other',
+        supportCategory: nlParsed.supportCategory || '',
+        ndisLineItemCode: '',
+        hourlyRate: 0,
+        totalAmount: 0,
+        hours: totalHours || 0,
+        notes: nlParsed.description || '',
+        status: 'Completed' as const,
+        convertToInvoice: false,
+      };
+
+      await addShift(shiftData);
+
+      // Find the newly created shift
+      const newShift = useStore.getState().shifts.find(
+        (s) => s.carerId === carerId && s.date === dateStr && s.startTime === shiftData.startTime && s.status === 'Completed'
+      );
+
+      if (!newShift) {
+        toast.error('Failed to create associated shift');
+        setNlCreating(false);
+        return;
+      }
+
+      await addTimesheet({
+        carerId,
+        shiftId: newShift.id,
+        clockIn,
+        clockOut,
+        breakMinutes: 0,
+        totalHours,
+        status: 'pending',
+        notes: nlParsed.description || '',
+      });
+
+      toast.success('Timesheet created successfully!');
+      setNlParsed(null);
+      setNlInput('');
+    } catch (err) {
+      console.error('Create timesheet error:', err);
+      toast.error(err instanceof Error ? err.message : 'Failed to create timesheet');
+    } finally {
+      setNlCreating(false);
+    }
+  };
 
   // Bulk selection
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -81,11 +245,28 @@ export default function Timesheets() {
   // Filtered
   const filtered = useMemo(() => {
     let result = [...timesheets];
+
+    // Keyword search
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter((t) => {
+        const carer = getCarerById(t.carerId);
+        const shift = shifts.find((s) => s.id === t.shiftId);
+        const carerName = carer ? `${carer.firstName} ${carer.lastName}`.toLowerCase() : '';
+        const shiftDate = shift?.date ?? '';
+        return (
+          carerName.includes(q) ||
+          shiftDate.includes(q) ||
+          t.status.toLowerCase().includes(q)
+        );
+      });
+    }
+
     if (filterStatus) result = result.filter((t) => t.status === filterStatus);
     if (filterCarerId) result = result.filter((t) => t.carerId === filterCarerId);
     result.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     return result;
-  }, [timesheets, filterStatus, filterCarerId]);
+  }, [timesheets, searchQuery, filterStatus, filterCarerId, getCarerById, shifts]);
 
   // Selection
   const pendingFiltered = useMemo(() => filtered.filter((t) => t.status === 'pending'), [filtered]);
@@ -265,58 +446,158 @@ export default function Timesheets() {
         </div>
       </div>
 
-      {/* Filter Bar */}
-      <div className="card p-4">
-        <div className="flex items-center justify-between mb-3">
-          <button
-            onClick={() => setShowFilters((v) => !v)}
-            className="btn-ghost flex items-center gap-2 text-sm"
-          >
-            <ListFilter size={16} />
-            {showFilters ? 'Hide Filters' : 'Show Filters'}
-          </button>
-          {(filterStatus || filterCarerId) && (
-            <button
-              onClick={() => {
-                setFilterStatus('');
-                setFilterCarerId('');
-              }}
-              className="text-sm text-burgundy hover:underline"
-            >
-              Clear filters
-            </button>
-          )}
+      {/* AI Natural Language Input */}
+      <div className="card">
+        <div className="flex items-start gap-3">
+          <div className="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+            <Sparkles size={16} className="text-purple-600" />
+          </div>
+          <div className="flex-1">
+            <div className="flex items-center gap-2 mb-2">
+              <h3 className="text-sm font-semibold text-charcoal">Quick Entry with AI</h3>
+              <span className="text-[10px] px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded-full font-medium">Beta</span>
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={nlInput}
+                onChange={(e) => setNlInput(e.target.value)}
+                onKeyDown={handleNlKeyDown}
+                placeholder="Type what happened... e.g. 'Sarah worked with James, Monday 9am-1pm community access'"
+                className="input-field flex-1"
+                disabled={nlParsing}
+              />
+              <button
+                onClick={handleNlParse}
+                disabled={nlParsing || !nlInput.trim()}
+                className={cn('btn-primary whitespace-nowrap', (nlParsing || !nlInput.trim()) && 'opacity-50 cursor-not-allowed')}
+              >
+                {nlParsing ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                Parse
+              </button>
+            </div>
+          </div>
         </div>
 
-        {showFilters && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="input-field text-sm"
-            >
-              <option value="">All Statuses</option>
-              {STATUS_OPTIONS.map((s) => (
-                <option key={s} value={s}>
-                  {s.charAt(0).toUpperCase() + s.slice(1)}
-                </option>
-              ))}
-            </select>
-            <select
-              value={filterCarerId}
-              onChange={(e) => setFilterCarerId(e.target.value)}
-              className="input-field text-sm"
-            >
-              <option value="">All Carers</option>
-              {carers.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.firstName} {c.lastName}
-                </option>
-              ))}
-            </select>
+        {/* Parsed Result Preview */}
+        {nlParsed && (
+          <div className="mt-4 border border-purple-200 rounded-xl bg-purple-50/50 p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-sm font-semibold text-charcoal">Parsed Result</h4>
+              <div className="flex items-center gap-2">
+                <span className={cn(
+                  'text-xs px-2 py-0.5 rounded-full font-medium',
+                  nlParsed.confidence >= 0.8 ? 'bg-green-100 text-green-700' :
+                  nlParsed.confidence >= 0.5 ? 'bg-amber-100 text-amber-700' :
+                  'bg-red-100 text-red-700'
+                )}>
+                  {Math.round(nlParsed.confidence * 100)}% confident
+                </span>
+                <button
+                  onClick={() => setNlParsed(null)}
+                  className="p-1 hover:bg-purple-200/50 rounded transition-colors"
+                >
+                  <X size={14} className="text-mid-gray" />
+                </button>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+              {nlParsed.clientName && (
+                <div>
+                  <span className="text-xs text-mid-gray block">Client</span>
+                  <span className="font-medium">{nlParsed.clientName}</span>
+                </div>
+              )}
+              {nlParsed.serviceType && (
+                <div>
+                  <span className="text-xs text-mid-gray block">Activity Type</span>
+                  <span className="font-medium">{nlParsed.serviceType}</span>
+                </div>
+              )}
+              {nlParsed.date && (
+                <div>
+                  <span className="text-xs text-mid-gray block">Date</span>
+                  <span className="font-medium">{formatDate(nlParsed.date)}</span>
+                </div>
+              )}
+              {(nlParsed.startTime || nlParsed.endTime) && (
+                <div>
+                  <span className="text-xs text-mid-gray block">Time</span>
+                  <span className="font-medium">{nlParsed.startTime || '?'} - {nlParsed.endTime || '?'}</span>
+                </div>
+              )}
+              {nlParsed.hours != null && (
+                <div>
+                  <span className="text-xs text-mid-gray block">Hours</span>
+                  <span className="font-medium">{nlParsed.hours}h</span>
+                </div>
+              )}
+              {nlParsed.description && (
+                <div className="col-span-2">
+                  <span className="text-xs text-mid-gray block">Description</span>
+                  <span className="font-medium">{nlParsed.description}</span>
+                </div>
+              )}
+              {nlParsed.supportCategory && (
+                <div className="col-span-2">
+                  <span className="text-xs text-mid-gray block">Category</span>
+                  <span className="font-medium">{nlParsed.supportCategory}</span>
+                </div>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 mt-4">
+              <button onClick={() => setNlParsed(null)} className="btn-ghost text-sm">
+                Dismiss
+              </button>
+              <button
+                onClick={handleCreateTimesheetFromParsed}
+                disabled={nlCreating}
+                className={cn('btn-primary text-sm', nlCreating && 'opacity-50 cursor-not-allowed')}
+              >
+                {nlCreating ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                Create Timesheet from this
+              </button>
+            </div>
           </div>
         )}
       </div>
+
+      {/* Filter Bar */}
+      <TableFilter
+        searchValue={searchQuery}
+        onSearchChange={setSearchQuery}
+        searchPlaceholder="Search by carer name, shift date..."
+        filterOptions={[
+          {
+            label: 'All Statuses',
+            value: 'status',
+            options: STATUS_OPTIONS.map((s) => ({
+              label: s.charAt(0).toUpperCase() + s.slice(1),
+              value: s,
+            })),
+          },
+          {
+            label: 'All Carers',
+            value: 'carer',
+            options: carers.map((c) => ({
+              label: `${c.firstName} ${c.lastName}`,
+              value: c.id,
+            })),
+          },
+        ]}
+        activeFilters={{ status: filterStatus, carer: filterCarerId }}
+        onFilterChange={(key, value) => {
+          if (key === 'status') setFilterStatus(value);
+          if (key === 'carer') setFilterCarerId(value);
+        }}
+        onClearFilters={() => {
+          setSearchQuery('');
+          setFilterStatus('');
+          setFilterCarerId('');
+        }}
+        resultCount={filtered.length}
+        totalCount={timesheets.length}
+      />
 
       {/* Table */}
       {filtered.length === 0 ? (

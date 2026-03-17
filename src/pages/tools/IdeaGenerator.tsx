@@ -83,11 +83,12 @@ export default function IdeaGenerator() {
       setLocation(parts.join(', '));
     }
 
-    // Auto-fill from care plan
-    const carePlan = carePlans.find((cp) => cp.clientId === selectedClient.id);
-    if (carePlan) {
-      // Parse likes/preferences into interest tags
-      if (carePlan.likesAndPreferences) {
+    // Auto-fill interests from client.interests first, then fall back to care plan
+    if (selectedClient.interests && selectedClient.interests.length > 0) {
+      setInterests(selectedClient.interests);
+    } else {
+      const carePlan = carePlans.find((cp) => cp.clientId === selectedClient.id);
+      if (carePlan?.likesAndPreferences) {
         const parsed = carePlan.likesAndPreferences
           .split(/[,;\n]+/)
           .map((s) => s.trim())
@@ -96,8 +97,11 @@ export default function IdeaGenerator() {
           setInterests(parsed);
         }
       }
+    }
 
-      // Auto-fill support needs
+    // Auto-fill support needs from care plan
+    const carePlan = carePlans.find((cp) => cp.clientId === selectedClient.id);
+    if (carePlan) {
       if (carePlan.supportNeedsSummary) {
         setSupportNeeds(carePlan.supportNeedsSummary);
       }

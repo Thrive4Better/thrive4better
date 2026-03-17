@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useStore } from '@/stores/useStore';
 import { formatCurrency, formatDate, generateId, cn, getNextInvoiceNumber } from '@/lib/utils';
 import type { Invoice, InvoiceLineItem, Shift, Client } from '@/types';
@@ -206,6 +206,7 @@ interface InvoiceBuilderProps {
 
 export default function InvoiceBuilder({ modalMode, editId: editIdProp, onClose, initialParsedData }: InvoiceBuilderProps = {}) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { id: routeId } = useParams<{ id: string }>();
   const id = modalMode ? editIdProp : routeId;
   const isEditing = Boolean(id);
@@ -214,7 +215,12 @@ export default function InvoiceBuilder({ modalMode, editId: editIdProp, onClose,
     if (modalMode && onClose) {
       onClose();
     } else {
-      navigate('/invoices');
+      const fromPath = (location.state as { from?: string } | null)?.from;
+      if (fromPath) {
+        navigate(fromPath);
+      } else {
+        navigate('/invoices');
+      }
     }
   };
 

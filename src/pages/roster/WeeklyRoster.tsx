@@ -313,23 +313,25 @@ export default function WeeklyRoster() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-charcoal">Weekly Roster</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-charcoal">Weekly Roster</h1>
           <p className="text-sm text-mid-gray mt-1">
             Manage shifts and schedules for participants and carers
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
           <button
             onClick={handleSendAllReminders}
             disabled={sendingAllReminders || weekShifts.length === 0}
-            className="btn-secondary flex items-center gap-2"
+            className="btn-secondary flex items-center justify-center gap-2 min-h-[44px]"
           >
             {sendingAllReminders ? <Loader2 size={16} className="animate-spin" /> : <MessageSquare size={16} />}
-            Send All Reminders ({weekShifts.length})
+            <span className="hidden sm:inline">Send All Reminders</span>
+            <span className="sm:hidden">Send Reminders</span>
+            ({weekShifts.length})
           </button>
-          <button onClick={openNewShift} className="btn-primary flex items-center gap-2">
+          <button onClick={openNewShift} className="btn-primary flex items-center justify-center gap-2 min-h-[44px]">
             <Plus size={18} />
             Add Shift
           </button>
@@ -337,17 +339,17 @@ export default function WeeklyRoster() {
       </div>
 
       {/* Filter Bar + Week Navigation */}
-      <div className="card p-4">
-        <div className="flex flex-wrap items-center justify-between gap-4">
+      <div className="card p-3 sm:p-4">
+        <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center justify-between gap-3 sm:gap-4">
           {/* Week Nav */}
           <div className="flex items-center gap-2">
-            <button onClick={goPrev} className="btn-ghost p-2">
+            <button onClick={goPrev} className="btn-ghost p-2 min-w-[44px] min-h-[44px] flex items-center justify-center">
               <ChevronLeft size={18} />
             </button>
-            <button onClick={goToday} className="btn-secondary text-sm">
+            <button onClick={goToday} className="btn-secondary text-sm min-h-[44px]">
               Today
             </button>
-            <button onClick={goNext} className="btn-ghost p-2">
+            <button onClick={goNext} className="btn-ghost p-2 min-w-[44px] min-h-[44px] flex items-center justify-center">
               <ChevronRight size={18} />
             </button>
             <span className="ml-2 text-sm font-semibold text-charcoal flex items-center gap-2">
@@ -357,11 +359,11 @@ export default function WeeklyRoster() {
           </div>
 
           {/* Filters */}
-          <div className="flex items-center gap-3">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
             <select
               value={filterCarerId}
               onChange={(e) => setFilterCarerId(e.target.value)}
-              className="input-field text-sm py-1.5"
+              className="input-field text-sm py-2 sm:py-1.5 min-h-[44px]"
             >
               <option value="">All Carers</option>
               {carers.map((c) => (
@@ -373,7 +375,7 @@ export default function WeeklyRoster() {
             <select
               value={filterClientId}
               onChange={(e) => setFilterClientId(e.target.value)}
-              className="input-field text-sm py-1.5"
+              className="input-field text-sm py-2 sm:py-1.5 min-h-[44px]"
             >
               <option value="">All Clients</option>
               {activeClients.map((c) => (
@@ -693,7 +695,7 @@ function ShiftForm({ shift, clients, carers, onSave, onDelete, onCancel }: Shift
       </div>
 
       {/* Date & Time */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div>
           <label className="block text-sm font-medium text-charcoal mb-1">Date</label>
           <input type="date" {...register('date')} className="input-field" />
@@ -773,7 +775,7 @@ function ShiftForm({ shift, clients, carers, onSave, onDelete, onCancel }: Shift
       </div>
 
       {/* Rate & Total */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label className="block text-sm font-medium text-charcoal mb-1">
             Hourly Rate (AUD)

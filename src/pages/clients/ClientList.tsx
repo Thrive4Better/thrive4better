@@ -17,6 +17,7 @@ import {
   Archive, ArchiveRestore,
 } from 'lucide-react';
 import type { Client } from '@/types';
+import TableFilter from '@/components/ui/TableFilter';
 
 // ── Zod Schema ──────────────────────────────────────────────────────────────
 
@@ -525,74 +526,72 @@ export default function ClientList() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-charcoal">Clients</h1>
+          <h1 className="text-xl sm:text-2xl font-semibold text-charcoal">Clients</h1>
           <p className="text-sm text-mid-gray mt-1">
             {clients.length} participant{clients.length !== 1 ? 's' : ''} registered
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => { setImportModalOpen(true); setCsvRows([]); setImportResult(null); }}
-            className="btn-ghost flex items-center gap-2"
+            className="btn-ghost flex items-center gap-2 min-h-[44px]"
           >
-            <Upload size={16} /> Import CSV
+            <Upload size={16} /> <span className="hidden sm:inline">Import CSV</span><span className="sm:hidden">Import</span>
           </button>
-          <button onClick={handleExportCsv} className="btn-ghost flex items-center gap-2">
-            <Download size={16} /> Export CSV
+          <button onClick={handleExportCsv} className="btn-ghost flex items-center gap-2 min-h-[44px]">
+            <Download size={16} /> <span className="hidden sm:inline">Export CSV</span><span className="sm:hidden">Export</span>
           </button>
-          <button onClick={openAddForm} className="btn-primary">
+          <button onClick={openAddForm} className="btn-primary min-h-[44px]">
             <Plus size={16} /> Add Client
           </button>
         </div>
       </div>
 
       {/* Filters */}
-      <div className="card">
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="relative flex-1 min-w-[240px]">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-mid-gray" />
-            <input
-              type="text"
-              placeholder="Search by name, NDIS number, email or phone..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="input-field pl-9 w-full"
-            />
-          </div>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="input-field min-w-[140px]"
-          >
-            {statusOptions.map((s) => (
-              <option key={s} value={s}>
-                {s === 'All' ? 'All Statuses' : s}
-              </option>
-            ))}
-          </select>
-          <select
-            value={fundingFilter}
-            onChange={(e) => setFundingFilter(e.target.value)}
-            className="input-field min-w-[160px]"
-          >
-            {fundingTypes.map((f) => (
-              <option key={f} value={f}>
-                {f === 'All' ? 'All Funding Types' : f}
-              </option>
-            ))}
-          </select>
-          <label className="flex items-center gap-2 text-sm text-mid-gray cursor-pointer whitespace-nowrap">
-            <input
-              type="checkbox"
-              checked={showArchived}
-              onChange={(e) => setShowArchived(e.target.checked)}
-              className="rounded border-sage text-forest focus:ring-forest"
-            />
-            Show archived
-          </label>
-        </div>
+      <TableFilter
+        searchValue={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Search by name, NDIS number, email or phone..."
+        filterOptions={[
+          {
+            label: 'All Statuses',
+            value: 'status',
+            options: statusOptions.filter((s) => s !== 'All').map((s) => ({ label: s, value: s })),
+          },
+          {
+            label: 'All Funding Types',
+            value: 'funding',
+            options: fundingTypes.filter((f) => f !== 'All').map((f) => ({ label: f, value: f })),
+          },
+        ]}
+        activeFilters={{
+          status: statusFilter === 'All' ? '' : statusFilter,
+          funding: fundingFilter === 'All' ? '' : fundingFilter,
+        }}
+        onFilterChange={(key, value) => {
+          if (key === 'status') setStatusFilter(value || 'All');
+          if (key === 'funding') setFundingFilter(value || 'All');
+        }}
+        onClearFilters={() => {
+          setSearch('');
+          setStatusFilter('All');
+          setFundingFilter('All');
+        }}
+        resultCount={filteredClients.length}
+        totalCount={visibleClients.length}
+      />
+      <div className="flex items-center">
+        <label className="flex items-center gap-2 text-sm text-mid-gray cursor-pointer whitespace-nowrap">
+          <input
+            type="checkbox"
+            checked={showArchived}
+            onChange={(e) => setShowArchived(e.target.checked)}
+            className="rounded border-sage text-forest focus:ring-forest"
+          />
+          Show archived
+        </label>
       </div>
 
       {/* Table */}

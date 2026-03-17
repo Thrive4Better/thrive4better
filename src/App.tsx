@@ -34,6 +34,7 @@ import UserManagement from '@/pages/admin/UserManagement';
 import DocumentLibrary from '@/pages/documents/DocumentLibrary';
 import Settings from '@/pages/settings/Settings';
 import NotFound from '@/pages/NotFound';
+import NoAccess from '@/pages/NoAccess';
 import LoadingSpinner from '@/components/ui/LoadingSpinner';
 
 // Lazy-loaded admin pages
@@ -78,6 +79,7 @@ export default function App() {
         />
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/no-access" element={<NoAccess />} />
           <Route element={<ProtectedRoute />}>
             <Route element={<AppLayout />}>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -99,7 +101,7 @@ export default function App() {
               <Route path="/invoices/:id/edit" element={<InvoiceBuilder />} />
               <Route path="/invoices/rates" element={<NdisRates />} />
 
-              {/* All roles */}
+              {/* All roles - permissions checked by ProtectedRoute via ROUTE_PERMISSIONS */}
               <Route path="/incidents" element={<IncidentList />} />
               <Route path="/incidents/new" element={<IncidentList />} />
               <Route path="/documents" element={<DocumentLibrary />} />
@@ -108,7 +110,7 @@ export default function App() {
               <Route path="/tools/support-plans" element={<SupportPlanInfo />} />
               <Route path="/settings" element={<Settings />} />
 
-              {/* Client portal routes */}
+              {/* Client portal routes - accessible to client role AND anyone with matching permissions */}
               <Route element={<ProtectedRoute allowedRoles={['client']} />}>
                 <Route path="/my-profile" element={<MyProfile />} />
                 <Route path="/rate-activities" element={<RateActivity />} />

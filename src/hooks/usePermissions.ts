@@ -32,6 +32,7 @@ export function usePermissions() {
     isManager: role === 'manager',
     isStaff: role === 'staff',
     isClient: role === 'client',
+    isGuest: role === 'guest',
     isAdminOrManager: role === 'admin' || role === 'manager',
 
     // Legacy permission booleans (now backed by granular permissions)

@@ -25,12 +25,12 @@ export default function SlideOver({ open, onClose, title, children, wide }: Slid
     <div className="fixed inset-0 z-50 flex justify-end">
       <div className="fixed inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
       <div
-        className={`relative bg-white shadow-xl flex flex-col h-full animate-slide-in ${wide ? 'w-[600px]' : 'w-[480px]'}`}
+        className={`relative bg-white shadow-xl flex flex-col h-full animate-slide-in w-full ${wide ? 'sm:w-[600px]' : 'sm:w-[480px]'}`}
         style={{ animation: 'slideIn 0.2s ease-out' }}
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-sage-pale">
           <h3 className="text-lg font-semibold text-charcoal">{title}</h3>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-sage-pale transition-colors">
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-sage-pale transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center">
             <X size={20} className="text-mid-gray" />
           </button>
         </div>

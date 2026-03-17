@@ -117,9 +117,9 @@ Respond with valid JSON as an array in this exact structure:
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 4096,
-        system: 'You are a creative NDIS activity coordinator in Australia. Suggest inclusive, accessible activities tailored to participants\' interests and support needs. Consider NDIS funding eligibility. Output valid JSON only.',
+        model: 'claude-haiku-3-5-20241022',
+        max_tokens: 2048,
+        system: 'You are an NDIS activity coordinator. Suggest inclusive activities. Be concise. Output valid JSON only.',
         messages: [
           { role: 'user', content: userPrompt },
         ],
@@ -162,7 +162,7 @@ Respond with valid JSON as an array in this exact structure:
       await supabase.from('ai_generation_log').insert({
         user_id: user.id,
         generation_type: 'activity_ideas',
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-haiku-3-5-20241022',
         input_tokens: anthropicData?.usage?.input_tokens || null,
         output_tokens: anthropicData?.usage?.output_tokens || null,
         created_at: new Date().toISOString(),

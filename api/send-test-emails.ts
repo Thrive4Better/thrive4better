@@ -21,12 +21,6 @@ import {
   documentSignedEmail,
 } from './lib/email-templates.js';
 
-const supabaseUrl = process.env.VITE_SUPABASE_URL!;
-const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const resendApiKey = process.env.RESEND_API_KEY!;
-const fromEmail = process.env.RESEND_FROM_EMAIL || 'notifications@info.thrive4better.com';
-const testRecipient = 'hello@thrive4better.com.au';
-
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -47,6 +41,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  // Validate env vars early
+  const supabaseUrl = process.env.VITE_SUPABASE_URL;
+  const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const resendApiKey = process.env.RESEND_API_KEY;
+  const fromEmail = process.env.RESEND_FROM_EMAIL || 'notifications@info.thrive4better.com';
+  const testRecipient = 'hello@thrive4better.com.au';
+
+  if (!supabaseUrl || !supabaseServiceRoleKey) {
+    return res.status(500).json({ error: 'Server misconfigured: missing Supabase env vars' });
+  }
+  if (!resendApiKey) {
+    return res.status(500).json({ error: 'Server misconfigured: RESEND_API_KEY is not set. Add it in Vercel → Settings → Environment Variables.' });
+  }
+
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'Missing or invalid Authorization header' });
@@ -56,15 +64,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
   const { data: { user }, error: authError } = await supabase.auth.getUser(jwt);
   if (authError || !user) {
-    return res.status(401).json({ error: 'Unauthorized' });
+    return res.status(401).json({ error: 'Unauthorized', details: authError?.message });
   }
+
+  // Support sending a single template or all templates
+  const { template: requestedTemplate } = req.body || {};
 
   try {
     const resend = new Resend(resendApiKey);
     const results: { template: string; status: string; error?: string }[] = [];
 
     // All sample email templates
-    const sampleEmails = [
+    const allEmails = [
       {
         name: 'Shift Confirmation',
         ...shiftConfirmationEmail('Sarah', 'James Wilson', '2026-03-20', '9:00am', '1:00pm', 'Community Access', '45 Oak Street, Brunswick VIC 3056', 'Client enjoys park visits'),
@@ -140,10 +151,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       },
     ];
 
+    // If a specific template is requested, only send that one
+    const emailsToSend = requestedTemplate
+      ? allEmails.filter(e => e.name.toLowerCase() === requestedTemplate.toLowerCase())
+      : allEmails;
+
+    if (requestedTemplate && emailsToSend.length === 0) {
+      return res.status(400).json({
+        error: `Template "${requestedTemplate}" not found`,
+        availableTemplates: allEmails.map(e => e.name),
+      });
+    }
+
     // Send each email
-    for (const email of sampleEmails) {
+    for (const email of emailsToSend) {
       try {
-        const { error } = await resend.emails.send({
+        const { data, error } = await resend.emails.send({
           from: `Thrive 4 Better <${fromEmail}>`,
           to: testRecipient,
           subject: `[TEST] ${email.subject}`,

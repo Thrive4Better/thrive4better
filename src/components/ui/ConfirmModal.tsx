@@ -24,9 +24,9 @@ export default function ConfirmModal({ open, onClose, onConfirm, title, message 
             <p className="mt-1 text-sm text-mid-gray">{message}</p>
           </div>
         </div>
-        <div className="flex justify-end gap-3 mt-6">
-          <button onClick={onClose} className="btn-ghost">Cancel</button>
-          <button onClick={onConfirm} className="btn-danger">Confirm</button>
+        <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 sm:gap-3 mt-6">
+          <button onClick={onClose} className="btn-ghost min-h-[44px]">Cancel</button>
+          <button onClick={onConfirm} className="btn-danger min-h-[44px]">Confirm</button>
         </div>
       </div>
     </div>

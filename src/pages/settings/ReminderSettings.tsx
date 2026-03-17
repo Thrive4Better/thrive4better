@@ -228,7 +228,7 @@ export default function ReminderSettings() {
           <div>
             <h3 className="text-base font-semibold text-charcoal">Test Notifications</h3>
             <p className="text-xs text-mid-gray">
-              Send all 17 notification templates to your Thrive4Better admin email to verify formatting and delivery before going live.
+              Send a single test email or all 17 templates to verify formatting and delivery before going live.
             </p>
           </div>
         </div>
@@ -247,13 +247,18 @@ export default function ReminderSettings() {
 
 function SendTestEmailsButton() {
   const [sending, setSending] = useState(false);
+  const [sendingAll, setSendingAll] = useState(false);
+  const [lastResult, setLastResult] = useState<string | null>(null);
 
-  const handleSendTestEmails = async () => {
-    setSending(true);
+  const handleSendTest = async (sendAll: boolean) => {
+    if (sendAll) setSendingAll(true);
+    else setSending(true);
+    setLastResult(null);
+
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) {
-        toast.error('Not authenticated');
+        toast.error('Not authenticated — please sign in again');
         return;
       }
 
@@ -263,33 +268,71 @@ function SendTestEmailsButton() {
           Authorization: `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({}),
+        body: JSON.stringify(sendAll ? {} : { template: 'Welcome' }),
       });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => null);
+        const msg = errorData?.error || errorData?.details || `Server error ${res.status}`;
+        toast.error(msg);
+        setLastResult(`Error: ${msg}`);
+        return;
+      }
 
       const data = await res.json();
       if (data.success) {
-        toast.success(`${data.sent} test emails sent to ${data.recipient}`);
+        toast.success(`${data.sent} test email${data.sent !== 1 ? 's' : ''} sent to ${data.recipient}`);
+        setLastResult(`Sent ${data.sent} email${data.sent !== 1 ? 's' : ''} to ${data.recipient}`);
         if (data.failed > 0) {
-          toast.error(`${data.failed} emails failed to send`);
+          const failedNames = data.results
+            ?.filter((r: { status: string }) => r.status === 'failed')
+            .map((r: { template: string; error?: string }) => `${r.template}: ${r.error}`)
+            .join(', ');
+          toast.error(`${data.failed} failed: ${failedNames}`);
+          setLastResult(prev => `${prev} | ${data.failed} failed: ${failedNames}`);
         }
       } else {
         toast.error(data.error || 'Failed to send test emails');
+        setLastResult(`Error: ${data.error || 'Unknown error'}`);
       }
     } catch (err) {
-      toast.error('Failed to send test emails');
+      const msg = err instanceof Error ? err.message : 'Network error';
+      toast.error(`Failed: ${msg}`);
+      setLastResult(`Error: ${msg}`);
     } finally {
       setSending(false);
+      setSendingAll(false);
     }
   };
 
   return (
-    <button
-      onClick={handleSendTestEmails}
-      disabled={sending}
-      className="flex items-center gap-2 px-4 py-2 rounded-lg border border-forest text-forest hover:bg-forest/5 text-sm font-medium transition-colors disabled:opacity-50"
-    >
-      <Send size={16} />
-      {sending ? 'Sending 17 test emails...' : 'Send Test Emails to Thrive4Better'}
-    </button>
+    <div className="space-y-3">
+      <div className="flex flex-wrap gap-2">
+        <button
+          onClick={() => handleSendTest(false)}
+          disabled={sending || sendingAll}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg border border-forest text-forest hover:bg-forest/5 text-sm font-medium transition-colors disabled:opacity-50"
+        >
+          <Send size={16} />
+          {sending ? 'Sending...' : 'Send 1 Test Email'}
+        </button>
+        <button
+          onClick={() => handleSendTest(true)}
+          disabled={sending || sendingAll}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-300 text-mid-gray hover:bg-gray-50 text-sm font-medium transition-colors disabled:opacity-50"
+        >
+          <Mail size={16} />
+          {sendingAll ? 'Sending 17 emails...' : 'Send All 17 Templates'}
+        </button>
+      </div>
+      <p className="text-xs text-mid-gray">
+        Test emails are sent to <span className="font-medium">hello@thrive4better.com.au</span>
+      </p>
+      {lastResult && (
+        <p className={`text-xs font-medium ${lastResult.startsWith('Error') ? 'text-red-600' : 'text-forest'}`}>
+          {lastResult}
+        </p>
+      )}
+    </div>
   );
 }

@@ -31,6 +31,7 @@ const BUILT_IN_ROLES: CustomRole[] = [
   { id: 'manager', name: 'Manager', isBuiltIn: true, permissions: ROLE_DEFAULTS.manager },
   { id: 'staff', name: 'Staff', isBuiltIn: true, permissions: ROLE_DEFAULTS.staff },
   { id: 'client', name: 'Client', isBuiltIn: true, permissions: ROLE_DEFAULTS.client },
+  { id: 'guest', name: 'Guest', isBuiltIn: true, permissions: ROLE_DEFAULTS.guest },
 ];
 
 function loadCustomRoles(): CustomRole[] {
@@ -69,6 +70,8 @@ const roleBadgeStyles: Record<string, string> = {
   admin: 'bg-burgundy/10 text-burgundy',
   manager: 'bg-blue-100 text-blue-800',
   staff: 'bg-sage-pale text-forest',
+  client: 'bg-teal-100 text-teal-800',
+  guest: 'bg-gray-100 text-gray-600',
 };
 
 async function callManageUser(body: Record<string, unknown>) {
@@ -94,6 +97,7 @@ type TabKey = 'users' | 'roles';
 export default function UserManagement() {
   const { user } = useAuth();
   const carers = useStore((s) => s.carers);
+  const clients = useStore((s) => s.clients);
 
   const [activeTab, setActiveTab] = useState<TabKey>('users');
 
@@ -103,10 +107,15 @@ export default function UserManagement() {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [togglingStatus, setTogglingStatus] = useState<string | null>(null);
 
-  // Invite form state
+  // Create user / invite form state
   const [invEmail, setInvEmail] = useState('');
-  const [invRole, setInvRole] = useState<UserRole>('staff');
+  const [invFullName, setInvFullName] = useState('');
+  const [invPhone, setInvPhone] = useState('');
+  const [invRole, setInvRole] = useState<UserRole>('guest');
   const [invCarerId, setInvCarerId] = useState('');
+  const [invClientId, setInvClientId] = useState('');
+  const [invPassword, setInvPassword] = useState('');
+  const [invMethod, setInvMethod] = useState<'password' | 'invite'>('invite');
   const [inviting, setInviting] = useState(false);
 
   // Permissions slide-over
@@ -304,33 +313,74 @@ export default function UserManagement() {
     }
   };
 
-  // Invite user
+  // Create user account or send invitation
   const handleInvite = async () => {
     if (!invEmail.trim()) {
       toast.error('Email is required');
       return;
     }
+    if (!invFullName.trim()) {
+      toast.error('Full name is required');
+      return;
+    }
+    if (invMethod === 'password' && invPassword.length < 6) {
+      toast.error('Password must be at least 6 characters');
+      return;
+    }
+
     setInviting(true);
     try {
-      const token = generateId();
-      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-      const { error } = await supabase.from('user_invitations').insert({
-        id: generateId(),
-        email: invEmail.trim().toLowerCase(),
-        role: invRole,
-        carer_id: invCarerId || null,
-        invited_by: user?.id,
-        token,
-        expires_at: expiresAt,
-      });
-      if (error) throw error;
-      toast.success(`Invitation created for ${invEmail}`);
+      // Determine the linked record id (carer_id is used for both client and carer linking)
+      const linkedId = invRole === 'client' ? (invClientId || null) : (invCarerId || null);
+
+      // Get default permissions for the selected role
+      const defaultPerms = ROLE_DEFAULTS[invRole] || [];
+
+      if (invMethod === 'password') {
+        // Create user with password via the manage-user edge function
+        await callManageUser({
+          action: 'createUser',
+          email: invEmail.trim().toLowerCase(),
+          password: invPassword,
+          fullName: invFullName.trim(),
+          phone: invPhone.trim() || null,
+          role: invRole,
+          carerId: linkedId,
+          permissions: defaultPerms,
+        });
+        toast.success(`Account created for ${invFullName.trim()}`);
+      } else {
+        // Create invitation record
+        const token = generateId();
+        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+        const { error } = await supabase.from('user_invitations').insert({
+          id: generateId(),
+          email: invEmail.trim().toLowerCase(),
+          role: invRole,
+          carer_id: linkedId,
+          invited_by: user?.id,
+          token,
+          expires_at: expiresAt,
+        });
+        if (error) throw error;
+        toast.success(`Invitation created for ${invFullName.trim()}`);
+      }
+
+      // Reset form
       setInvEmail('');
-      setInvRole('staff');
+      setInvFullName('');
+      setInvPhone('');
+      setInvRole('guest');
       setInvCarerId('');
+      setInvClientId('');
+      setInvPassword('');
+      setInvMethod('invite');
       setInviteOpen(false);
+
+      // Refresh the profiles list
+      fetchProfiles();
     } catch (err: any) {
-      toast.error(err?.message || 'Failed to create invitation');
+      toast.error(err?.message || 'Failed to create user');
     } finally {
       setInviting(false);
     }
@@ -439,7 +489,7 @@ export default function UserManagement() {
         <h1 className="text-2xl font-semibold text-charcoal">User Management</h1>
         {activeTab === 'users' && (
           <button onClick={() => setInviteOpen(true)} className="btn-primary">
-            <UserPlus size={16} /> Invite User
+            <UserPlus size={16} /> Create User
           </button>
         )}
         {activeTab === 'roles' && (
@@ -554,9 +604,11 @@ export default function UserManagement() {
                                 onChange={(e) => handleRoleChange(profile.id, e.target.value as UserRole)}
                                 className="appearance-none bg-transparent pr-6 pl-2 py-1 rounded-md border border-sage-pale text-sm text-charcoal cursor-pointer focus:outline-none focus:ring-2 focus:ring-forest/20"
                               >
-                                <option value="admin">admin</option>
-                                <option value="manager">manager</option>
+                                <option value="guest">guest</option>
+                                <option value="client">client</option>
                                 <option value="staff">staff</option>
+                                <option value="manager">manager</option>
+                                <option value="admin">admin</option>
                                 {customRoles.map((cr) => (
                                   <option key={cr.id} value={cr.id}>{cr.name}</option>
                                 ))}
@@ -780,11 +832,24 @@ export default function UserManagement() {
         </div>
       )}
 
-      {/* Invite SlideOver */}
-      <SlideOver open={inviteOpen} onClose={() => setInviteOpen(false)} title="Invite User">
+      {/* Create User SlideOver */}
+      <SlideOver open={inviteOpen} onClose={() => setInviteOpen(false)} title="Create User Account" wide>
         <div className="space-y-4">
+          {/* Full Name */}
           <div>
-            <label className="block text-sm font-medium text-charcoal mb-1">Email address</label>
+            <label className="block text-sm font-medium text-charcoal mb-1">Full Name *</label>
+            <input
+              type="text"
+              value={invFullName}
+              onChange={(e) => setInvFullName(e.target.value)}
+              placeholder="John Smith"
+              className="w-full px-3 py-2 rounded-lg border border-sage-pale text-sm text-charcoal placeholder:text-mid-gray focus:outline-none focus:ring-2 focus:ring-forest/20"
+            />
+          </div>
+
+          {/* Email */}
+          <div>
+            <label className="block text-sm font-medium text-charcoal mb-1">Email Address *</label>
             <input
               type="email"
               value={invEmail}
@@ -793,6 +858,20 @@ export default function UserManagement() {
               className="w-full px-3 py-2 rounded-lg border border-sage-pale text-sm text-charcoal placeholder:text-mid-gray focus:outline-none focus:ring-2 focus:ring-forest/20"
             />
           </div>
+
+          {/* Phone */}
+          <div>
+            <label className="block text-sm font-medium text-charcoal mb-1">Phone</label>
+            <input
+              type="tel"
+              value={invPhone}
+              onChange={(e) => setInvPhone(e.target.value)}
+              placeholder="04XX XXX XXX"
+              className="w-full px-3 py-2 rounded-lg border border-sage-pale text-sm text-charcoal placeholder:text-mid-gray focus:outline-none focus:ring-2 focus:ring-forest/20"
+            />
+          </div>
+
+          {/* Role */}
           <div>
             <label className="block text-sm font-medium text-charcoal mb-1">Role</label>
             <select
@@ -800,6 +879,8 @@ export default function UserManagement() {
               onChange={(e) => setInvRole(e.target.value as UserRole)}
               className="w-full px-3 py-2 rounded-lg border border-sage-pale text-sm text-charcoal focus:outline-none focus:ring-2 focus:ring-forest/20"
             >
+              <option value="guest">Guest (No Access)</option>
+              <option value="client">Client</option>
               <option value="staff">Staff</option>
               <option value="manager">Manager</option>
               <option value="admin">Admin</option>
@@ -807,31 +888,133 @@ export default function UserManagement() {
                 <option key={cr.id} value={cr.id}>{cr.name}</option>
               ))}
             </select>
+            <p className="text-xs text-mid-gray mt-1">
+              {invRole === 'guest'
+                ? 'Guest accounts have no access until permissions are granted.'
+                : `Default ${invRole} permissions will be applied. You can customise later.`}
+            </p>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-charcoal mb-1">
-              Link to Carer (optional)
-            </label>
-            <select
-              value={invCarerId}
-              onChange={(e) => setInvCarerId(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-sage-pale text-sm text-charcoal focus:outline-none focus:ring-2 focus:ring-forest/20"
-            >
-              <option value="">No carer linked</option>
-              {carers.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.firstName} {c.lastName}
-                </option>
-              ))}
-            </select>
+
+          {/* Link to Client record (shown when role is client) */}
+          {invRole === 'client' && (
+            <div>
+              <label className="block text-sm font-medium text-charcoal mb-1">
+                Link to Client Record
+              </label>
+              <select
+                value={invClientId}
+                onChange={(e) => setInvClientId(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-sage-pale text-sm text-charcoal focus:outline-none focus:ring-2 focus:ring-forest/20"
+              >
+                <option value="">Select a client...</option>
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.firstName} {c.lastName} ({c.ndisNumber || 'No NDIS'})
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-mid-gray mt-1">
+                Links this login to an existing client record so they can see their care plan and shifts.
+              </p>
+            </div>
+          )}
+
+          {/* Link to Carer record (shown when role is staff/manager/admin) */}
+          {invRole !== 'client' && invRole !== 'guest' && (
+            <div>
+              <label className="block text-sm font-medium text-charcoal mb-1">
+                Link to Carer Record (optional)
+              </label>
+              <select
+                value={invCarerId}
+                onChange={(e) => setInvCarerId(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-sage-pale text-sm text-charcoal focus:outline-none focus:ring-2 focus:ring-forest/20"
+              >
+                <option value="">No carer linked</option>
+                {carers.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.firstName} {c.lastName}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Account creation method */}
+          <div className="border-t border-sage-pale pt-4">
+            <label className="block text-sm font-medium text-charcoal mb-2">Account Setup Method</label>
+            <div className="flex gap-3">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="invMethod"
+                  value="invite"
+                  checked={invMethod === 'invite'}
+                  onChange={() => setInvMethod('invite')}
+                  className="text-forest focus:ring-forest/20"
+                />
+                <span className="text-sm text-charcoal">Send invite email</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="invMethod"
+                  value="password"
+                  checked={invMethod === 'password'}
+                  onChange={() => setInvMethod('password')}
+                  className="text-forest focus:ring-forest/20"
+                />
+                <span className="text-sm text-charcoal">Set initial password</span>
+              </label>
+            </div>
           </div>
-          <div className="pt-4">
+
+          {/* Password field (only shown when setting password) */}
+          {invMethod === 'password' && (
+            <div>
+              <label className="block text-sm font-medium text-charcoal mb-1">Initial Password *</label>
+              <input
+                type="password"
+                value={invPassword}
+                onChange={(e) => setInvPassword(e.target.value)}
+                placeholder="Minimum 6 characters"
+                className="w-full px-3 py-2 rounded-lg border border-sage-pale text-sm text-charcoal placeholder:text-mid-gray focus:outline-none focus:ring-2 focus:ring-forest/20"
+              />
+              <p className="text-xs text-mid-gray mt-1">
+                The user can change this after their first login.
+              </p>
+            </div>
+          )}
+
+          {/* Role permissions preview */}
+          <div className="border border-sage-pale rounded-lg p-3 bg-sage-pale/10">
+            <p className="text-xs font-semibold text-charcoal mb-2">Default Permissions for {invRole}</p>
+            {(ROLE_DEFAULTS[invRole] || []).length === 0 ? (
+              <p className="text-xs text-mid-gray italic">No permissions (blank slate). Configure after creation.</p>
+            ) : (
+              <div className="flex flex-wrap gap-1">
+                {(ROLE_DEFAULTS[invRole] || []).map((perm) => (
+                  <span key={perm} className="text-[11px] px-1.5 py-0.5 rounded bg-white border border-sage-pale text-charcoal">
+                    {ALL_PERMISSIONS[perm]}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Submit */}
+          <div className="pt-2">
             <button
               onClick={handleInvite}
-              disabled={inviting || !invEmail.trim()}
-              className="btn-primary w-full justify-center disabled:opacity-50"
+              disabled={inviting || !invEmail.trim() || !invFullName.trim()}
+              className="btn-primary w-full justify-center disabled:opacity-50 flex items-center gap-2"
             >
-              {inviting ? 'Creating invitation...' : 'Send Invitation'}
+              <UserPlus size={16} />
+              {inviting
+                ? 'Creating...'
+                : invMethod === 'password'
+                  ? 'Create Account'
+                  : 'Send Invitation'}
             </button>
           </div>
         </div>
@@ -854,9 +1037,11 @@ export default function UserManagement() {
                 onChange={(e) => handlePermRoleChange(e.target.value as UserRole)}
                 className="w-full px-3 py-2 rounded-lg border border-sage-pale text-sm text-charcoal focus:outline-none focus:ring-2 focus:ring-forest/20"
               >
-                <option value="admin">Admin</option>
-                <option value="manager">Manager</option>
+                <option value="guest">Guest (No Access)</option>
+                <option value="client">Client</option>
                 <option value="staff">Staff</option>
+                <option value="manager">Manager</option>
+                <option value="admin">Admin</option>
                 {customRoles.map((cr) => (
                   <option key={cr.id} value={cr.id}>{cr.name}</option>
                 ))}

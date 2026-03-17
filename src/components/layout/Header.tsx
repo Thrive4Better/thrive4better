@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
-import { useLocation } from 'react-router-dom';
-import { Search, Bell, LogOut, Menu, Check } from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { Search, Bell, LogOut, Menu, Check, ExternalLink } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+
+type NotificationType = 'shift' | 'invoice' | 'care_plan' | 'timesheet' | 'incident';
 
 interface Notification {
   id: string;
@@ -9,14 +11,24 @@ interface Notification {
   description: string;
   timestamp: string;
   read: boolean;
+  type: NotificationType;
+  link: string;
 }
 
+const TYPE_CONFIG: Record<NotificationType, { label: string; color: string }> = {
+  shift: { label: 'Shift', color: 'bg-blue-100 text-blue-700' },
+  invoice: { label: 'Invoice', color: 'bg-amber-100 text-amber-700' },
+  care_plan: { label: 'Care Plan', color: 'bg-emerald-100 text-emerald-700' },
+  timesheet: { label: 'Timesheet', color: 'bg-purple-100 text-purple-700' },
+  incident: { label: 'Incident', color: 'bg-red-100 text-red-700' },
+};
+
 const initialNotifications: Notification[] = [
-  { id: '1', title: 'New shift assigned', description: 'Monday 9:00 AM - 1:00 PM with Sarah Thompson', timestamp: '10 min ago', read: false },
-  { id: '2', title: 'Invoice #INV-2026-0042 sent', description: 'Emailed to Plan Manager for James Wilson', timestamp: '1 hour ago', read: false },
-  { id: '3', title: 'Care plan updated for James Wilson', description: 'Goals section revised by coordinator', timestamp: '2 hours ago', read: false },
-  { id: '4', title: 'Timesheet approved', description: 'Week ending 14 Mar 2026 approved by admin', timestamp: '5 hours ago', read: true },
-  { id: '5', title: 'Incident report submitted', description: 'Minor medication error logged for review', timestamp: 'Yesterday', read: true },
+  { id: '1', title: 'New shift assigned', description: 'Monday 9:00 AM - 1:00 PM with Sarah Thompson', timestamp: '10 min ago', read: false, type: 'shift', link: '/my-shifts' },
+  { id: '2', title: 'Invoice #INV-2026-0042 sent', description: 'Emailed to Plan Manager for James Wilson', timestamp: '1 hour ago', read: false, type: 'invoice', link: '/invoices' },
+  { id: '3', title: 'Care plan updated for James Wilson', description: 'Goals section revised by coordinator', timestamp: '2 hours ago', read: false, type: 'care_plan', link: '/clients/care-plans' },
+  { id: '4', title: 'Timesheet approved', description: 'Week ending 14 Mar 2026 approved by admin', timestamp: '5 hours ago', read: true, type: 'timesheet', link: '/roster/timesheets' },
+  { id: '5', title: 'Incident report submitted', description: 'Minor medication error logged for review', timestamp: 'Yesterday', read: true, type: 'incident', link: '/incidents' },
 ];
 
 interface HeaderProps {
@@ -63,9 +75,23 @@ const pageTitles: Record<string, { title: string; breadcrumb: string[] }> = {
 
 export default function Header({ onToggleSidebar }: HeaderProps) {
   const location = useLocation();
+  const navigate = useNavigate();
   const { user, signOut } = useAuth();
+
+  const handleSignOut = async () => {
+    try {
+      await signOut();
+      navigate('/login');
+    } catch (err) {
+      console.error('Sign out error:', err);
+      // Force navigate even on error since state is already cleared
+      navigate('/login');
+    }
+  };
+
   const [notifications, setNotifications] = useState<Notification[]>(initialNotifications);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [expandedNotification, setExpandedNotification] = useState<string | null>(null);
   const notifRef = useRef<HTMLDivElement>(null);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
@@ -120,7 +146,7 @@ export default function Header({ onToggleSidebar }: HeaderProps) {
         {/* Hamburger - mobile only */}
         <button
           onClick={onToggleSidebar}
-          className="lg:hidden p-2 -ml-1 rounded-lg hover:bg-sage-pale transition-colors text-mid-gray"
+          className="lg:hidden p-2 -ml-1 rounded-lg hover:bg-sage-pale transition-colors text-mid-gray min-w-[44px] min-h-[44px] flex items-center justify-center"
           aria-label="Open sidebar"
         >
           <Menu size={22} />
@@ -152,7 +178,7 @@ export default function Header({ onToggleSidebar }: HeaderProps) {
         <div className="relative" ref={notifRef}>
           <button
             onClick={() => setShowNotifications((prev) => !prev)}
-            className="relative p-2 rounded-lg hover:bg-sage-pale transition-colors"
+            className="relative p-2 rounded-lg hover:bg-sage-pale transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"
             aria-label="Notifications"
           >
             <Bell size={20} className="text-mid-gray" />
@@ -164,7 +190,7 @@ export default function Header({ onToggleSidebar }: HeaderProps) {
           </button>
 
           {showNotifications && (
-            <div className="absolute right-0 top-full mt-2 w-80 sm:w-96 bg-white rounded-xl shadow-xl border border-sage-pale z-50 overflow-hidden">
+            <div className="fixed sm:absolute right-2 sm:right-0 left-2 sm:left-auto top-16 sm:top-full sm:mt-2 sm:w-96 bg-white rounded-xl shadow-xl border border-sage-pale z-50 overflow-hidden">
               <div className="flex items-center justify-between px-4 py-3 bg-forest/5 border-b border-sage-pale">
                 <h3 className="text-sm font-semibold text-charcoal">Notifications</h3>
                 {unreadCount > 0 && (
@@ -177,29 +203,62 @@ export default function Header({ onToggleSidebar }: HeaderProps) {
                   </button>
                 )}
               </div>
-              <div className="max-h-80 overflow-y-auto divide-y divide-sage-pale/60">
-                {notifications.map((n) => (
-                  <button
-                    key={n.id}
-                    onClick={() => markAsRead(n.id)}
-                    className={`w-full text-left px-4 py-3 hover:bg-sage-pale/40 transition-colors ${
-                      !n.read ? 'bg-forest/[0.03]' : ''
-                    }`}
-                  >
-                    <div className="flex items-start gap-2">
-                      {!n.read && (
-                        <span className="mt-1.5 w-2 h-2 rounded-full bg-forest flex-shrink-0" />
+              <div className="max-h-96 overflow-y-auto divide-y divide-sage-pale/60">
+                {notifications.map((n) => {
+                  const isExpanded = expandedNotification === n.id;
+                  const typeInfo = TYPE_CONFIG[n.type];
+                  return (
+                    <div key={n.id}>
+                      <button
+                        onClick={() => {
+                          markAsRead(n.id);
+                          setExpandedNotification(isExpanded ? null : n.id);
+                        }}
+                        className={`w-full text-left px-4 py-3 hover:bg-sage-pale/40 transition-colors ${
+                          !n.read ? 'bg-forest/[0.03]' : ''
+                        }`}
+                      >
+                        <div className="flex items-start gap-2">
+                          {!n.read && (
+                            <span className="mt-1.5 w-2 h-2 rounded-full bg-forest flex-shrink-0" />
+                          )}
+                          <div className={!n.read ? '' : 'ml-4'}>
+                            <div className="flex items-center gap-2">
+                              <p className={`text-sm ${!n.read ? 'font-semibold text-charcoal' : 'font-medium text-mid-gray'}`}>
+                                {n.title}
+                              </p>
+                            </div>
+                            <p className="text-xs text-mid-gray mt-0.5 line-clamp-1">{n.description}</p>
+                            <p className="text-[10px] text-mid-gray/70 mt-1">{n.timestamp}</p>
+                          </div>
+                        </div>
+                      </button>
+                      {isExpanded && (
+                        <div className="px-4 pb-3 pt-1 bg-sage-pale/20 border-t border-sage-pale/40">
+                          <div className="ml-4 space-y-2">
+                            <span className={`inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full ${typeInfo.color}`}>
+                              {typeInfo.label}
+                            </span>
+                            <p className="text-xs text-charcoal">{n.description}</p>
+                            <p className="text-[10px] text-mid-gray">{n.timestamp}</p>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setShowNotifications(false);
+                                setExpandedNotification(null);
+                                navigate(n.link);
+                              }}
+                              className="inline-flex items-center gap-1 text-xs font-medium text-forest hover:text-forest-mid transition-colors mt-1"
+                            >
+                              <ExternalLink size={12} />
+                              Go to {typeInfo.label}
+                            </button>
+                          </div>
+                        </div>
                       )}
-                      <div className={!n.read ? '' : 'ml-4'}>
-                        <p className={`text-sm ${!n.read ? 'font-semibold text-charcoal' : 'font-medium text-mid-gray'}`}>
-                          {n.title}
-                        </p>
-                        <p className="text-xs text-mid-gray mt-0.5">{n.description}</p>
-                        <p className="text-[10px] text-mid-gray/70 mt-1">{n.timestamp}</p>
-                      </div>
                     </div>
-                  </button>
-                ))}
+                  );
+                })}
               </div>
               {notifications.length === 0 && (
                 <div className="px-4 py-8 text-center text-sm text-mid-gray">No notifications</div>
@@ -214,8 +273,8 @@ export default function Header({ onToggleSidebar }: HeaderProps) {
           <span className="text-sm text-charcoal hidden xl:block max-w-[120px] truncate">{userName}</span>
         </div>
         <button
-          onClick={signOut}
-          className="p-2 rounded-lg hover:bg-sage-pale transition-colors text-mid-gray hover:text-burgundy"
+          onClick={handleSignOut}
+          className="p-2 rounded-lg hover:bg-sage-pale transition-colors text-mid-gray hover:text-burgundy min-w-[44px] min-h-[44px] flex items-center justify-center"
           title="Sign out"
         >
           <LogOut size={18} />

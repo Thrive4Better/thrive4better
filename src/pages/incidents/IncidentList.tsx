@@ -11,6 +11,8 @@ import {
   Trash2,
   ListFilter,
   ShieldAlert,
+  ChevronUp,
+  ChevronDown,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -23,6 +25,7 @@ import SlideOver from '@/components/ui/SlideOver';
 import ConfirmModal from '@/components/ui/ConfirmModal';
 import StatusBadge from '@/components/ui/StatusBadge';
 import EmptyState from '@/components/ui/EmptyState';
+import TableFilter from '@/components/ui/TableFilter';
 
 // ── Constants ──
 
@@ -110,8 +113,15 @@ export default function IncidentList() {
   // Filters
   const [filterStatus, setFilterStatus] = useState('');
   const [filterSeverity, setFilterSeverity] = useState('');
+  const [filterType, setFilterType] = useState('');
   const [search, setSearch] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+
+  // Sort
+  type IncidentSortField = 'date' | 'client' | 'severity' | 'status' | 'type';
+  type SortDir = 'asc' | 'desc';
+  const [sortField, setSortField] = useState<IncidentSortField>('date');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
 
   // Drawer
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -124,6 +134,7 @@ export default function IncidentList() {
 
     if (filterStatus) result = result.filter((r) => r.status === filterStatus);
     if (filterSeverity) result = result.filter((r) => r.severity === filterSeverity);
+    if (filterType) result = result.filter((r) => r.incidentType === filterType);
 
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -132,13 +143,49 @@ export default function IncidentList() {
         const carer = getCarerById(r.carerId);
         const clientName = client ? `${client.firstName} ${client.lastName}`.toLowerCase() : '';
         const carerName = carer ? `${carer.firstName} ${carer.lastName}`.toLowerCase() : '';
-        return clientName.includes(q) || carerName.includes(q);
+        const typeLabel = INCIDENT_TYPES.find((t) => t.value === r.incidentType)?.label?.toLowerCase() ?? '';
+        return (
+          clientName.includes(q) ||
+          carerName.includes(q) ||
+          r.description.toLowerCase().includes(q) ||
+          typeLabel.includes(q) ||
+          r.severity.includes(q)
+        );
       });
     }
 
-    result.sort((a, b) => b.incidentDate.localeCompare(a.incidentDate));
+    // Sort
+    result.sort((a, b) => {
+      let cmp = 0;
+      switch (sortField) {
+        case 'date':
+          cmp = a.incidentDate.localeCompare(b.incidentDate);
+          break;
+        case 'client': {
+          const ca = getClientById(a.clientId);
+          const cb = getClientById(b.clientId);
+          cmp = `${ca?.lastName ?? ''} ${ca?.firstName ?? ''}`.localeCompare(
+            `${cb?.lastName ?? ''} ${cb?.firstName ?? ''}`
+          );
+          break;
+        }
+        case 'severity': {
+          const order: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1 };
+          cmp = (order[a.severity] ?? 0) - (order[b.severity] ?? 0);
+          break;
+        }
+        case 'status':
+          cmp = a.status.localeCompare(b.status);
+          break;
+        case 'type':
+          cmp = a.incidentType.localeCompare(b.incidentType);
+          break;
+      }
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+
     return result;
-  }, [incidentReports, filterStatus, filterSeverity, search, getClientById, getCarerById]);
+  }, [incidentReports, filterStatus, filterSeverity, filterType, search, sortField, sortDir, getClientById, getCarerById]);
 
   const openNew = useCallback(() => {
     setEditing(null);
@@ -185,69 +232,49 @@ export default function IncidentList() {
       </div>
 
       {/* Filter Bar */}
-      <div className="card p-4">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setShowFilters((v) => !v)}
-              className="btn-ghost flex items-center gap-2 text-sm"
-            >
-              <ListFilter size={16} />
-              {showFilters ? 'Hide Filters' : 'Show Filters'}
-            </button>
-            <div className="relative">
-              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-mid-gray" />
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search by client or carer..."
-                className="input-field pl-9 text-sm w-64"
-              />
-            </div>
-          </div>
-          {(filterStatus || filterSeverity) && (
-            <button
-              onClick={() => {
-                setFilterStatus('');
-                setFilterSeverity('');
-              }}
-              className="text-sm text-burgundy hover:underline"
-            >
-              Clear filters
-            </button>
-          )}
-        </div>
-
-        {showFilters && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="input-field text-sm"
-            >
-              <option value="">All Statuses</option>
-              {STATUS_OPTIONS.map((s) => (
-                <option key={s} value={s}>
-                  {statusLabel(s)}
-                </option>
-              ))}
-            </select>
-            <select
-              value={filterSeverity}
-              onChange={(e) => setFilterSeverity(e.target.value)}
-              className="input-field text-sm"
-            >
-              <option value="">All Severities</option>
-              {SEVERITY_OPTIONS.map((s) => (
-                <option key={s} value={s}>
-                  {s.charAt(0).toUpperCase() + s.slice(1)}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-      </div>
+      <TableFilter
+        searchValue={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Search by client, carer, description, type..."
+        filterOptions={[
+          {
+            label: 'All Statuses',
+            value: 'status',
+            options: STATUS_OPTIONS.map((s) => ({ label: statusLabel(s), value: s })),
+          },
+          {
+            label: 'All Severities',
+            value: 'severity',
+            options: SEVERITY_OPTIONS.map((s) => ({
+              label: s.charAt(0).toUpperCase() + s.slice(1),
+              value: s,
+            })),
+          },
+          {
+            label: 'All Types',
+            value: 'type',
+            options: INCIDENT_TYPES.map((t) => ({ label: t.label, value: t.value })),
+          },
+        ]}
+        activeFilters={{
+          status: filterStatus,
+          severity: filterSeverity,
+          type: filterType,
+        }}
+        onFilterChange={(key, value) => {
+          if (key === 'status') setFilterStatus(value);
+          if (key === 'severity') setFilterSeverity(value);
+          if (key === 'type') setFilterType(value);
+        }}
+        onClearFilters={() => {
+          setSearch('');
+          setFilterStatus('');
+          setFilterSeverity('');
+          setFilterType('');
+        }}
+        resultCount={filteredReports.length}
+        totalCount={incidentReports.length}
+      />
 
       {/* Table */}
       {filteredReports.length === 0 ? (
@@ -263,12 +290,32 @@ export default function IncidentList() {
             <table className="w-full">
               <thead>
                 <tr>
-                  <th className="table-header">Date</th>
-                  <th className="table-header">Client</th>
+                  {([
+                    ['date', 'Date'],
+                    ['client', 'Client'],
+                    ['type', 'Type'],
+                    ['severity', 'Severity'],
+                    ['status', 'Status'],
+                  ] as [IncidentSortField, string][]).map(([field, label]) => (
+                    <th
+                      key={field}
+                      className="table-header cursor-pointer select-none hover:text-charcoal"
+                      onClick={() => {
+                        if (sortField === field) setSortDir((d) => d === 'asc' ? 'desc' : 'asc');
+                        else { setSortField(field); setSortDir('asc'); }
+                      }}
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        {label}
+                        {sortField === field ? (
+                          sortDir === 'asc' ? <ChevronUp size={14} className="text-forest" /> : <ChevronDown size={14} className="text-forest" />
+                        ) : (
+                          <ChevronUp size={14} className="text-mid-gray/30" />
+                        )}
+                      </span>
+                    </th>
+                  ))}
                   <th className="table-header">Carer</th>
-                  <th className="table-header">Type</th>
-                  <th className="table-header">Severity</th>
-                  <th className="table-header">Status</th>
                   <th className="table-header">Actions</th>
                 </tr>
               </thead>

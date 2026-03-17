@@ -26,6 +26,7 @@ export interface Client {
   nominatedContactName?: string;
   nominatedContactPhone?: string;
   nominatedContactRelation?: string;
+  interests?: string[];
   createdAt: string;
 }
 
@@ -81,6 +82,32 @@ export interface Carer {
   isSubcontractor: boolean;
   notes: string;
   createdAt: string;
+  // Extended profile fields
+  dateOfBirth?: string;
+  age?: number; // computed
+  address?: string;
+  suburb?: string;
+  postcode?: string;
+  state?: string;
+  tfn?: string; // Tax File Number (masked)
+  abn?: string; // if subcontractor
+  bankAccountName?: string;
+  bankBsb?: string;
+  bankAccountNumber?: string;
+  superFundName?: string;
+  superMemberNumber?: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
+  emergencyContactRelation?: string;
+  hireDate?: string;
+  hourlyRate?: number;
+  tier?: 'Junior' | 'Standard' | 'Senior' | 'Lead';
+  preferredClients?: string[]; // client IDs
+  maxWeeklyHours?: number;
+  driversLicense?: boolean;
+  ownVehicle?: boolean;
+  languages?: string[];
+  specializations?: string[];
 }
 
 export interface Shift {
@@ -100,6 +127,18 @@ export interface Shift {
   status: 'Scheduled' | 'Confirmed' | 'In Progress' | 'Completed' | 'Cancelled';
   convertToInvoice: boolean;
   createdAt: string;
+}
+
+export type ShiftNoteType = 'general' | 'incident' | 'progress' | 'medication' | 'behaviour';
+
+export interface ShiftNote {
+  id: string;
+  shiftId: string;
+  carerId: string;
+  clientId: string;
+  content: string;
+  timestamp: string;
+  noteType: ShiftNoteType;
 }
 
 export interface Invoice {
@@ -160,7 +199,7 @@ export interface ClientDocument {
 
 // ── RBAC ──
 
-export type UserRole = 'admin' | 'manager' | 'staff' | 'client';
+export type UserRole = 'admin' | 'manager' | 'staff' | 'client' | 'guest';
 
 // ── Activity Reviews ──
 
@@ -322,6 +361,13 @@ export type CarePlanSectionType =
   | 'cultural_considerations'
   | 'emergency_contacts'
   | 'review_schedule'
+  | 'short_term_goals'
+  | 'long_term_goals'
+  | 'core_supports'
+  | 'capacity_building_supports'
+  | 'capital_supports'
+  | 'carer_contacts'
+  | 'sign_off'
   | 'custom';
 
 export interface CarePlanSection {

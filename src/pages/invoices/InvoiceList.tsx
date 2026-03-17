@@ -7,6 +7,7 @@ import { exportToCsv, fmtCurrencyPlain } from '@/lib/export-utils';
 import StatusBadge from '@/components/ui/StatusBadge';
 import EmptyState from '@/components/ui/EmptyState';
 import ConfirmModal from '@/components/ui/ConfirmModal';
+import TableFilter from '@/components/ui/TableFilter';
 import InvoiceBuilder from './InvoiceBuilder';
 import NdisRates from './NdisRates';
 import {
@@ -26,9 +27,7 @@ import {
   Archive,
   ArchiveRestore,
   Ban,
-  Sparkles,
   X,
-  Check,
   Eye,
 } from 'lucide-react';
 import { parseISO, isWithinInterval, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
@@ -40,19 +39,6 @@ import type { Invoice, Client } from '@/types';
 type InvoiceStatus = 'All' | 'Draft' | 'Sent' | 'Paid' | 'Overdue' | 'Void' | 'Archived';
 type SortField = 'invoiceNumber' | 'clientName' | 'periodStart' | 'lineItems' | 'subtotal' | 'gstAmount' | 'total' | 'dueDate';
 type SortDir = 'asc' | 'desc';
-
-// ── Parsed Invoice Preview ──
-interface ParsedInvoiceData {
-  clientName: string | null;
-  serviceType: string | null;
-  date: string | null;
-  startTime: string | null;
-  endTime: string | null;
-  hours: number | null;
-  description: string | null;
-  supportCategory: string | null;
-  confidence: number;
-}
 
 export default function InvoiceList() {
   const navigate = useNavigate();
@@ -73,77 +59,15 @@ export default function InvoiceList() {
     onConfirm: () => {},
   });
 
+  // ── Search ──
+  const [invoiceSearch, setInvoiceSearch] = useState('');
+
   // ── Modal state ──
   const [builderModalOpen, setBuilderModalOpen] = useState(false);
   const [builderEditId, setBuilderEditId] = useState<string | undefined>(undefined);
   const [ratesModalOpen, setRatesModalOpen] = useState(false);
 
-  // ── AI Natural Language Input ──
-  const [nlInput, setNlInput] = useState('');
-  const [nlParsing, setNlParsing] = useState(false);
-  const [nlParsed, setNlParsed] = useState<ParsedInvoiceData | null>(null);
-
-  const handleNlParse = async () => {
-    if (!nlInput.trim()) return;
-
-    setNlParsing(true);
-    setNlParsed(null);
-
-    try {
-      const token = session?.access_token;
-      if (!token) {
-        toast.error('You must be logged in to use AI parsing');
-        return;
-      }
-
-      const clientNames = clients
-        .filter((c) => c.status === 'Active')
-        .map((c) => `${c.firstName} ${c.lastName}`);
-
-      const res = await fetch('/api/parse-invoice', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ text: nlInput, clientNames }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || 'Failed to parse input');
-      }
-
-      setNlParsed(data.parsed);
-      toast.success('Parsed successfully! Review the details below.');
-    } catch (err) {
-      console.error('Parse error:', err);
-      toast.error(err instanceof Error ? err.message : 'Failed to parse input');
-    } finally {
-      setNlParsing(false);
-    }
-  };
-
-  const handleNlKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleNlParse();
-    }
-  };
-
-  const handleUseNlParsed = () => {
-    if (!nlParsed) return;
-    // Open the builder modal with parsed data pre-populated
-    // We pass the parsed data via a temporary state
-    setBuilderEditId(undefined);
-    setBuilderModalOpen(true);
-    // Store parsed data for the builder to consume
-    setNlParsedForBuilder(nlParsed);
-    setNlParsed(null);
-    setNlInput('');
-  };
-
-  const [nlParsedForBuilder, setNlParsedForBuilder] = useState<ParsedInvoiceData | null>(null);
+  const [nlParsedForBuilder, setNlParsedForBuilder] = useState<any>(null);
 
   // ── PDF Download ──
   const handleDownloadPdf = async (invoice: Invoice, client: Client | undefined) => {
@@ -289,6 +213,20 @@ export default function InvoiceList() {
       list = list.filter((i) => i.status === activeTab);
     }
 
+    // Keyword search
+    if (invoiceSearch.trim()) {
+      const q = invoiceSearch.toLowerCase();
+      list = list.filter((i) => {
+        const client = getClientById(i.clientId);
+        const clientName = client ? `${client.firstName} ${client.lastName}`.toLowerCase() : '';
+        return (
+          i.invoiceNumber.toLowerCase().includes(q) ||
+          clientName.includes(q) ||
+          i.status.toLowerCase().includes(q)
+        );
+      });
+    }
+
     const getClientName = (clientId: string) => {
       const c = getClientById(clientId);
       return c ? `${c.lastName}, ${c.firstName}` : '';
@@ -326,7 +264,7 @@ export default function InvoiceList() {
     });
 
     return list;
-  }, [invoices, activeTab, sortField, sortDir, getClientById, showArchived]);
+  }, [invoices, activeTab, sortField, sortDir, getClientById, showArchived, invoiceSearch]);
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
@@ -439,12 +377,12 @@ export default function InvoiceList() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-charcoal">Invoices</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-charcoal">Invoices</h1>
           <p className="text-sm text-mid-gray mt-1">Manage and track NDIS invoices</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-2 sm:gap-3">
           <button
             onClick={() => {
               const headers = ['Invoice Number', 'Client Name', 'Invoice Date', 'Due Date', 'Status', 'Subtotal', 'GST', 'Total'];
@@ -464,133 +402,33 @@ export default function InvoiceList() {
               });
               exportToCsv('invoices.csv', headers, rows);
             }}
-            className="btn-secondary"
+            className="btn-secondary min-h-[44px]"
           >
             <Download size={16} />
-            Export CSV
+            <span className="hidden sm:inline">Export CSV</span>
+            <span className="sm:hidden">Export</span>
           </button>
-          <button onClick={() => setRatesModalOpen(true)} className="btn-secondary">
+          <button onClick={() => setRatesModalOpen(true)} className="btn-secondary min-h-[44px]">
             <DollarSign size={16} />
-            NDIS Rates
+            <span className="hidden sm:inline">NDIS Rates</span>
+            <span className="sm:hidden">Rates</span>
           </button>
-          <button onClick={openBuilderNew} className="btn-primary">
+          <button onClick={openBuilderNew} className="btn-primary min-h-[44px]">
             <Plus size={16} />
             New Invoice
           </button>
         </div>
       </div>
 
-      {/* AI Natural Language Input */}
-      <div className="card">
-        <div className="flex items-start gap-3">
-          <div className="w-8 h-8 rounded-lg bg-purple-100 flex items-center justify-center flex-shrink-0 mt-0.5">
-            <Sparkles size={16} className="text-purple-600" />
-          </div>
-          <div className="flex-1">
-            <div className="flex items-center gap-2 mb-2">
-              <h3 className="text-sm font-semibold text-charcoal">Quick Entry with AI</h3>
-              <span className="text-[10px] px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded-full font-medium">Beta</span>
-            </div>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={nlInput}
-                onChange={(e) => setNlInput(e.target.value)}
-                onKeyDown={handleNlKeyDown}
-                placeholder="Type what happened... e.g. 'Sarah, community access, Monday 10am-1pm'"
-                className="input-field flex-1"
-                disabled={nlParsing}
-              />
-              <button
-                onClick={handleNlParse}
-                disabled={nlParsing || !nlInput.trim()}
-                className={cn('btn-primary whitespace-nowrap', (nlParsing || !nlInput.trim()) && 'opacity-50 cursor-not-allowed')}
-              >
-                {nlParsing ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-                Parse
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Parsed Result Preview */}
-        {nlParsed && (
-          <div className="mt-4 border border-purple-200 rounded-xl bg-purple-50/50 p-4">
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="text-sm font-semibold text-charcoal">Parsed Result</h4>
-              <div className="flex items-center gap-2">
-                <span className={cn(
-                  'text-xs px-2 py-0.5 rounded-full font-medium',
-                  nlParsed.confidence >= 0.8 ? 'bg-green-100 text-green-700' :
-                  nlParsed.confidence >= 0.5 ? 'bg-amber-100 text-amber-700' :
-                  'bg-red-100 text-red-700'
-                )}>
-                  {Math.round(nlParsed.confidence * 100)}% confident
-                </span>
-                <button
-                  onClick={() => setNlParsed(null)}
-                  className="p-1 hover:bg-purple-200/50 rounded transition-colors"
-                >
-                  <X size={14} className="text-mid-gray" />
-                </button>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-              {nlParsed.clientName && (
-                <div>
-                  <span className="text-xs text-mid-gray block">Client</span>
-                  <span className="font-medium">{nlParsed.clientName}</span>
-                </div>
-              )}
-              {nlParsed.serviceType && (
-                <div>
-                  <span className="text-xs text-mid-gray block">Service</span>
-                  <span className="font-medium">{nlParsed.serviceType}</span>
-                </div>
-              )}
-              {nlParsed.date && (
-                <div>
-                  <span className="text-xs text-mid-gray block">Date</span>
-                  <span className="font-medium">{formatDate(nlParsed.date)}</span>
-                </div>
-              )}
-              {(nlParsed.startTime || nlParsed.endTime) && (
-                <div>
-                  <span className="text-xs text-mid-gray block">Time</span>
-                  <span className="font-medium">{nlParsed.startTime || '?'} - {nlParsed.endTime || '?'}</span>
-                </div>
-              )}
-              {nlParsed.hours != null && (
-                <div>
-                  <span className="text-xs text-mid-gray block">Hours</span>
-                  <span className="font-medium">{nlParsed.hours}h</span>
-                </div>
-              )}
-              {nlParsed.description && (
-                <div className="col-span-2">
-                  <span className="text-xs text-mid-gray block">Description</span>
-                  <span className="font-medium">{nlParsed.description}</span>
-                </div>
-              )}
-              {nlParsed.supportCategory && (
-                <div className="col-span-2">
-                  <span className="text-xs text-mid-gray block">Category</span>
-                  <span className="font-medium">{nlParsed.supportCategory}</span>
-                </div>
-              )}
-            </div>
-            <div className="flex justify-end gap-2 mt-4">
-              <button onClick={() => setNlParsed(null)} className="btn-ghost text-sm">
-                Dismiss
-              </button>
-              <button onClick={handleUseNlParsed} className="btn-primary text-sm">
-                <Check size={14} />
-                Create Invoice with this data
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
+      {/* Invoice Search */}
+      <TableFilter
+        searchValue={invoiceSearch}
+        onSearchChange={setInvoiceSearch}
+        searchPlaceholder="Search by invoice #, client name, status..."
+        onClearFilters={() => setInvoiceSearch('')}
+        resultCount={filteredInvoices.length}
+        totalCount={invoices.length}
+      />
 
       {/* KPI Strip */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -608,26 +446,28 @@ export default function InvoiceList() {
       </div>
 
       {/* Tabs + Bulk Actions */}
-      <div className="flex items-center justify-between">
-        <div className="flex gap-1 bg-sage-pale rounded-lg p-1">
-          {tabs.map((tab) => {
-            const count = tab === 'All' ? invoices.length : invoices.filter((i) => i.status === tab).length;
-            return (
-              <button
-                key={tab}
-                onClick={() => { setActiveTab(tab); setSelectedIds(new Set()); }}
-                className={cn(
-                  'px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
-                  activeTab === tab ? 'bg-white text-forest shadow-sm' : 'text-mid-gray hover:text-charcoal'
-                )}
-              >
-                {tab} <span className="ml-1 text-xs opacity-60">({count})</span>
-              </button>
-            );
-          })}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+        <div className="overflow-x-auto -mx-3 px-3 sm:mx-0 sm:px-0">
+          <div className="flex gap-1 bg-sage-pale rounded-lg p-1 w-max">
+            {tabs.map((tab) => {
+              const count = tab === 'All' ? invoices.length : invoices.filter((i) => i.status === tab).length;
+              return (
+                <button
+                  key={tab}
+                  onClick={() => { setActiveTab(tab); setSelectedIds(new Set()); }}
+                  className={cn(
+                    'px-3 py-1.5 rounded-md text-sm font-medium transition-colors whitespace-nowrap min-h-[44px] sm:min-h-0',
+                    activeTab === tab ? 'bg-white text-forest shadow-sm' : 'text-mid-gray hover:text-charcoal'
+                  )}
+                >
+                  {tab} <span className="ml-1 text-xs opacity-60">({count})</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           <label className="flex items-center gap-2 text-sm text-mid-gray cursor-pointer whitespace-nowrap">
             <input
               type="checkbox"
@@ -639,11 +479,11 @@ export default function InvoiceList() {
           </label>
           {selectedIds.size > 0 && (
             <>
-              <button onClick={() => handleBulkAction('Sent')} className="btn-secondary text-sm">
+              <button onClick={() => handleBulkAction('Sent')} className="btn-secondary text-sm min-h-[44px]">
                 <Send size={14} />
                 Mark as Sent ({selectedIds.size})
               </button>
-              <button onClick={() => handleBulkAction('Paid')} className="btn-primary text-sm">
+              <button onClick={() => handleBulkAction('Paid')} className="btn-primary text-sm min-h-[44px]">
                 <CreditCard size={14} />
                 Mark as Paid ({selectedIds.size})
               </button>

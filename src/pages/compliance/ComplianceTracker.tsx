@@ -21,6 +21,7 @@ import { cn, formatDate } from '@/lib/utils';
 import SlideOver from '@/components/ui/SlideOver';
 import ConfirmModal from '@/components/ui/ConfirmModal';
 import EmptyState from '@/components/ui/EmptyState';
+import TableFilter from '@/components/ui/TableFilter';
 
 // ── Constants ──
 
@@ -96,6 +97,7 @@ export default function ComplianceTracker() {
   const { canViewCompliance } = usePermissions();
 
   // Filters
+  const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [filterCheckType, setFilterCheckType] = useState('');
   const [showFilters, setShowFilters] = useState(false);
@@ -131,6 +133,9 @@ export default function ComplianceTracker() {
     return { totalCarers, fullyCompliant, expiringSoon, expired };
   }, [carers, complianceRecords]);
 
+  // Total count for search results
+  const totalRecordCount = complianceRecords.length;
+
   // Group by carer with filters
   const groupedRecords = useMemo(() => {
     let records = [...complianceRecords];
@@ -141,6 +146,24 @@ export default function ComplianceTracker() {
     if (filterStatus) records = records.filter((r) => r.status === filterStatus);
     if (filterCheckType) records = records.filter((r) => r.checkType === filterCheckType);
 
+    // Keyword search
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      records = records.filter((r) => {
+        const carer = getCarerById(r.carerId);
+        const carerName = carer ? `${carer.firstName} ${carer.lastName}`.toLowerCase() : '';
+        return (
+          carerName.includes(q) ||
+          r.checkType.toLowerCase().includes(q) ||
+          (r.certificateNumber?.toLowerCase().includes(q) ?? false) ||
+          statusLabel(r.status).toLowerCase().includes(q)
+        );
+      });
+    }
+
+    // Sort records by expiry date
+    records.sort((a, b) => a.expiryDate.localeCompare(b.expiryDate));
+
     const groups = new Map<string, ComplianceRecord[]>();
     records.forEach((r) => {
       const arr = groups.get(r.carerId) || [];
@@ -149,7 +172,7 @@ export default function ComplianceTracker() {
     });
 
     return groups;
-  }, [complianceRecords, filterStatus, filterCheckType]);
+  }, [complianceRecords, filterStatus, filterCheckType, searchQuery, getCarerById]);
 
   const openNew = useCallback(() => {
     setEditing(null);
@@ -223,57 +246,35 @@ export default function ComplianceTracker() {
       </div>
 
       {/* Filter Bar */}
-      <div className="card p-4">
-        <div className="flex items-center justify-between mb-3">
-          <button
-            onClick={() => setShowFilters((v) => !v)}
-            className="btn-ghost flex items-center gap-2 text-sm"
-          >
-            <ListFilter size={16} />
-            {showFilters ? 'Hide Filters' : 'Show Filters'}
-          </button>
-          {(filterStatus || filterCheckType) && (
-            <button
-              onClick={() => {
-                setFilterStatus('');
-                setFilterCheckType('');
-              }}
-              className="text-sm text-burgundy hover:underline"
-            >
-              Clear filters
-            </button>
-          )}
-        </div>
-
-        {showFilters && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="input-field text-sm"
-            >
-              <option value="">All Statuses</option>
-              {STATUS_OPTIONS.map((s) => (
-                <option key={s} value={s}>
-                  {statusLabel(s)}
-                </option>
-              ))}
-            </select>
-            <select
-              value={filterCheckType}
-              onChange={(e) => setFilterCheckType(e.target.value)}
-              className="input-field text-sm"
-            >
-              <option value="">All Check Types</option>
-              {CHECK_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-      </div>
+      <TableFilter
+        searchValue={searchQuery}
+        onSearchChange={setSearchQuery}
+        searchPlaceholder="Search by carer name, check type, certificate #..."
+        filterOptions={[
+          {
+            label: 'All Statuses',
+            value: 'status',
+            options: STATUS_OPTIONS.map((s) => ({ label: statusLabel(s), value: s })),
+          },
+          {
+            label: 'All Check Types',
+            value: 'checkType',
+            options: CHECK_TYPES.map((t) => ({ label: t, value: t })),
+          },
+        ]}
+        activeFilters={{ status: filterStatus, checkType: filterCheckType }}
+        onFilterChange={(key, value) => {
+          if (key === 'status') setFilterStatus(value);
+          if (key === 'checkType') setFilterCheckType(value);
+        }}
+        onClearFilters={() => {
+          setSearchQuery('');
+          setFilterStatus('');
+          setFilterCheckType('');
+        }}
+        resultCount={Array.from(groupedRecords.values()).reduce((sum, arr) => sum + arr.length, 0)}
+        totalCount={totalRecordCount}
+      />
 
       {/* Grouped Table */}
       {groupedRecords.size === 0 ? (

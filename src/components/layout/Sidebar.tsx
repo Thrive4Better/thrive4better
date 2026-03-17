@@ -27,9 +27,12 @@ import {
   CreditCard,
   FolderOpen,
   UserPlus,
+  Star,
+  User,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePermissions } from '@/hooks/usePermissions';
+import type { Permission } from '@/lib/permissions';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -38,8 +41,8 @@ interface SidebarProps {
 
 export default function Sidebar({ isOpen, onClose }: SidebarProps) {
   const location = useLocation();
-  const { user } = useAuth();
-  const { isAdmin, isAdminOrManager } = usePermissions();
+  const { user, role } = useAuth();
+  const { hasPermission, hasAnyPermission } = usePermissions();
 
   const userName = user?.user_metadata?.full_name || user?.email || 'User';
   const initials = userName
@@ -55,12 +58,13 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
     return location.pathname === path || location.pathname.startsWith(path + '/');
   };
 
-  type NavItem = { to: string; icon: typeof LayoutDashboard; label: string };
+  type NavItem = { to: string; icon: typeof LayoutDashboard; label: string; permission?: Permission };
   type NavSection = { label: string; color: string; dotColor: string; items: NavItem[] };
 
   // Color-coded sections for visual navigation
   const sectionColors: Record<string, { color: string; dotColor: string }> = {
     OVERVIEW:               { color: 'text-forest',       dotColor: 'bg-forest' },
+    'MY PORTAL':            { color: 'text-teal-600',     dotColor: 'bg-teal-500' },
     CLIENTS:                { color: 'text-blue-600',     dotColor: 'bg-blue-500' },
     ROSTER:                 { color: 'text-violet-600',   dotColor: 'bg-violet-500' },
     'COMPLIANCE & SAFETY':  { color: 'text-amber-600',    dotColor: 'bg-amber-500' },
@@ -73,109 +77,155 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
     ADMIN:                  { color: 'text-rose-600',     dotColor: 'bg-rose-500' },
   };
 
-  const navSections: NavSection[] = [
-    {
-      label: 'OVERVIEW',
-      ...sectionColors.OVERVIEW,
-      items: [
-        { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-      ],
-    },
-    {
-      label: 'CLIENTS',
-      ...sectionColors.CLIENTS,
-      items: [
-        { to: '/clients', icon: Users, label: 'All Clients' },
-        { to: '/clients/care-plans', icon: ClipboardList, label: 'Care Plans' },
-      ],
-    },
-    {
-      label: 'ROSTER',
-      ...sectionColors.ROSTER,
-      items: [
-        { to: '/roster', icon: Calendar, label: 'Weekly Roster' },
-        { to: '/roster/shifts', icon: Clock, label: 'Shifts' },
-        { to: '/roster/carers', icon: UserCheck, label: 'Carers' },
-        ...(isAdminOrManager
-          ? [{ to: '/roster/timesheets', icon: Timer, label: 'Timesheets' } as NavItem]
-          : []),
-      ],
-    },
-    {
-      label: 'COMPLIANCE & SAFETY',
-      ...sectionColors['COMPLIANCE & SAFETY'],
-      items: [
-        { to: '/incidents', icon: AlertTriangle, label: 'Incidents' },
-        { to: '/compliance', icon: ShieldCheck, label: 'Compliance Tracker' },
-      ],
-    },
-    {
-      label: 'FINANCE',
-      ...sectionColors.FINANCE,
-      items: [
-        { to: '/invoices', icon: FileText, label: 'Invoices' },
-        { to: '/contractor-invoices', icon: Receipt, label: 'Contractor Invoices' },
-        { to: '/invoices/claims', icon: Receipt, label: 'Claim Tracker' },
-      ],
-    },
-  ];
+  const navSections: NavSection[] = [];
 
-  if (isAdminOrManager) {
-    navSections.push({
-      label: 'PAYROLL',
-      ...sectionColors.PAYROLL,
-      items: [
-        { to: '/payroll', icon: Wallet, label: 'Pay Runs' },
-        { to: '/payroll/new', icon: CreditCard, label: 'New Pay Run' },
-      ],
-    });
+  // Overview - always show if user has dashboard permission
+  navSections.push({
+    label: 'OVERVIEW',
+    ...sectionColors.OVERVIEW,
+    items: [
+      { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', permission: 'dashboard.view' },
+    ],
+  });
 
+  // Client portal section - show for client role
+  if (role === 'client') {
     navSections.push({
-      label: 'ACCOUNTING',
-      ...sectionColors.ACCOUNTING,
+      label: 'MY PORTAL',
+      ...sectionColors['MY PORTAL'],
       items: [
-        { to: '/accounting/chart-of-accounts', icon: Landmark, label: 'Chart of Accounts' },
-        { to: '/accounting/transactions', icon: ArrowLeftRight, label: 'Transactions' },
-        { to: '/accounting/reconciliation', icon: CheckCircle, label: 'Bank Reconciliation' },
-        { to: '/accounting/bas', icon: FileSpreadsheet, label: 'BAS / GST' },
-        { to: '/accounting/profit-and-loss', icon: TrendingUp, label: 'Profit & Loss' },
-        { to: '/accounting/balance-sheet', icon: Scale, label: 'Balance Sheet' },
-        { to: '/accounting/cash-flow', icon: Banknote, label: 'Cash Flow' },
-      ],
-    });
-
-    navSections.push({
-      label: 'REPORTS',
-      ...sectionColors.REPORTS,
-      items: [
-        { to: '/reports', icon: BarChart3, label: 'Reports & Analytics' },
+        { to: '/my-profile', icon: User, label: 'My Profile', permission: 'dashboard.view' },
+        { to: '/my-care-plan', icon: ClipboardList, label: 'My Care Plan', permission: 'careplans.view' },
+        { to: '/rate-activities', icon: Star, label: 'Rate Activities', permission: 'dashboard.view' },
+        { to: '/documents', icon: FolderOpen, label: 'My Documents', permission: 'documents.view' },
       ],
     });
   }
 
-  navSections.push({
-    label: 'DOCUMENTS',
-    ...sectionColors.DOCUMENTS,
-    items: [
-      { to: '/documents', icon: FolderOpen, label: 'Document Library' },
-    ],
-  });
+  // Clients section
+  if (hasPermission('clients.view')) {
+    navSections.push({
+      label: 'CLIENTS',
+      ...sectionColors.CLIENTS,
+      items: [
+        { to: '/clients', icon: Users, label: 'All Clients', permission: 'clients.view' },
+        { to: '/clients/care-plans', icon: ClipboardList, label: 'Care Plans', permission: 'careplans.view' },
+      ],
+    });
+  }
 
-  navSections.push({
-    label: 'AI TOOLS',
-    ...sectionColors['AI TOOLS'],
-    items: [
-      { to: '/tools/ideas', icon: Sparkles, label: 'Activity Ideas' },
-    ],
-  });
+  // Roster section
+  if (hasPermission('roster.view')) {
+    const rosterItems: NavItem[] = [
+      { to: '/roster', icon: Calendar, label: 'Weekly Roster', permission: 'roster.view' },
+      { to: '/roster/shifts', icon: Clock, label: 'Shifts', permission: 'roster.view' },
+      { to: '/roster/carers', icon: UserCheck, label: 'Carers', permission: 'carers.view' },
+    ];
+    if (hasPermission('timesheets.approve')) {
+      rosterItems.push({ to: '/roster/timesheets', icon: Timer, label: 'Timesheets', permission: 'timesheets.approve' });
+    }
+    navSections.push({
+      label: 'ROSTER',
+      ...sectionColors.ROSTER,
+      items: rosterItems,
+    });
+  }
 
-  if (isAdmin) {
+  // Compliance & Safety
+  if (hasAnyPermission(['compliance.view', 'incidents.view'])) {
+    navSections.push({
+      label: 'COMPLIANCE & SAFETY',
+      ...sectionColors['COMPLIANCE & SAFETY'],
+      items: [
+        { to: '/incidents', icon: AlertTriangle, label: 'Incidents', permission: 'incidents.view' },
+        { to: '/compliance', icon: ShieldCheck, label: 'Compliance Tracker', permission: 'compliance.view' },
+      ],
+    });
+  }
+
+  // Finance
+  if (hasPermission('invoices.view')) {
+    navSections.push({
+      label: 'FINANCE',
+      ...sectionColors.FINANCE,
+      items: [
+        { to: '/invoices', icon: FileText, label: 'Invoices', permission: 'invoices.view' },
+        { to: '/contractor-invoices', icon: Receipt, label: 'Contractor Invoices', permission: 'invoices.view' },
+        { to: '/invoices/claims', icon: Receipt, label: 'Claim Tracker', permission: 'invoices.view' },
+      ],
+    });
+  }
+
+  // Payroll
+  if (hasPermission('payroll.view')) {
+    navSections.push({
+      label: 'PAYROLL',
+      ...sectionColors.PAYROLL,
+      items: [
+        { to: '/payroll', icon: Wallet, label: 'Pay Runs', permission: 'payroll.view' },
+        { to: '/payroll/new', icon: CreditCard, label: 'New Pay Run', permission: 'payroll.run' },
+      ],
+    });
+  }
+
+  // Accounting
+  if (hasPermission('accounting.view')) {
+    navSections.push({
+      label: 'ACCOUNTING',
+      ...sectionColors.ACCOUNTING,
+      items: [
+        { to: '/accounting/chart-of-accounts', icon: Landmark, label: 'Chart of Accounts', permission: 'accounting.view' },
+        { to: '/accounting/transactions', icon: ArrowLeftRight, label: 'Transactions', permission: 'accounting.view' },
+        { to: '/accounting/reconciliation', icon: CheckCircle, label: 'Bank Reconciliation', permission: 'accounting.view' },
+        { to: '/accounting/bas', icon: FileSpreadsheet, label: 'BAS / GST', permission: 'accounting.bas' },
+        { to: '/accounting/profit-and-loss', icon: TrendingUp, label: 'Profit & Loss', permission: 'accounting.view' },
+        { to: '/accounting/balance-sheet', icon: Scale, label: 'Balance Sheet', permission: 'accounting.view' },
+        { to: '/accounting/cash-flow', icon: Banknote, label: 'Cash Flow', permission: 'accounting.view' },
+      ],
+    });
+  }
+
+  // Reports
+  if (hasPermission('reports.view')) {
+    navSections.push({
+      label: 'REPORTS',
+      ...sectionColors.REPORTS,
+      items: [
+        { to: '/reports', icon: BarChart3, label: 'Reports & Analytics', permission: 'reports.view' },
+      ],
+    });
+  }
+
+  // Documents (for non-client roles - clients see it in MY PORTAL)
+  if (role !== 'client' && hasPermission('documents.view')) {
+    navSections.push({
+      label: 'DOCUMENTS',
+      ...sectionColors.DOCUMENTS,
+      items: [
+        { to: '/documents', icon: FolderOpen, label: 'Document Library', permission: 'documents.view' },
+      ],
+    });
+  }
+
+  // AI Tools
+  if (hasPermission('dashboard.view')) {
+    navSections.push({
+      label: 'AI TOOLS',
+      ...sectionColors['AI TOOLS'],
+      items: [
+        { to: '/tools/ideas', icon: Sparkles, label: 'Activity Ideas' },
+      ],
+    });
+  }
+
+  // Admin
+  if (hasPermission('admin.users')) {
     navSections.push({
       label: 'ADMIN',
       ...sectionColors.ADMIN,
       items: [
-        { to: '/admin/users', icon: UserCog, label: 'User Management' },
-        { to: '/admin/onboarding', icon: UserPlus, label: 'Onboarding' },
+        { to: '/admin/users', icon: UserCog, label: 'User Management', permission: 'admin.users' },
+        { to: '/admin/onboarding', icon: UserPlus, label: 'Onboarding', permission: 'admin.users' },
       ],
     });
   }
@@ -211,49 +261,60 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-4 px-3">
-        {navSections.map((section) => (
-          <div key={section.label} className="mb-5">
-            <div className="flex items-center gap-2 px-3 mb-1.5">
-              <span className={`w-1.5 h-1.5 rounded-full ${section.dotColor} flex-shrink-0`} />
-              <p className={`text-[10px] font-semibold tracking-widest uppercase ${section.color}`}>
-                {section.label}
-              </p>
+        {navSections.map((section) => {
+          // Filter items by permission
+          const visibleItems = section.items.filter((item) => {
+            if (!item.permission) return true;
+            return hasPermission(item.permission);
+          });
+          if (visibleItems.length === 0) return null;
+
+          return (
+            <div key={section.label} className="mb-5">
+              <div className="flex items-center gap-2 px-3 mb-1.5">
+                <span className={`w-1.5 h-1.5 rounded-full ${section.dotColor} flex-shrink-0`} />
+                <p className={`text-[10px] font-semibold tracking-widest uppercase ${section.color}`}>
+                  {section.label}
+                </p>
+              </div>
+              {visibleItems.map((item) => {
+                const Icon = item.icon;
+                const active = isActive(item.to);
+                return (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors duration-100 mb-0.5 ${
+                      active
+                        ? 'bg-sage-pale text-forest'
+                        : 'text-mid-gray hover:bg-sage-pale/50 hover:text-charcoal'
+                    }`}
+                  >
+                    <Icon size={18} strokeWidth={active ? 2.2 : 1.8} />
+                    {item.label}
+                  </NavLink>
+                );
+              })}
             </div>
-            {section.items.map((item) => {
-              const Icon = item.icon;
-              const active = isActive(item.to);
-              return (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors duration-100 mb-0.5 ${
-                    active
-                      ? 'bg-sage-pale text-forest'
-                      : 'text-mid-gray hover:bg-sage-pale/50 hover:text-charcoal'
-                  }`}
-                >
-                  <Icon size={18} strokeWidth={active ? 2.2 : 1.8} />
-                  {item.label}
-                </NavLink>
-              );
-            })}
-          </div>
-        ))}
+          );
+        })}
       </nav>
 
       {/* Settings + User */}
       <div className="border-t border-sage-pale p-3">
-        <NavLink
-          to="/settings"
-          className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors duration-100 ${
-            location.pathname === '/settings'
-              ? 'bg-sage-pale text-forest'
-              : 'text-mid-gray hover:bg-sage-pale/50 hover:text-charcoal'
-          }`}
-        >
-          <Settings size={18} strokeWidth={1.8} />
-          Settings
-        </NavLink>
+        {hasPermission('admin.settings') && (
+          <NavLink
+            to="/settings"
+            className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors duration-100 ${
+              location.pathname === '/settings'
+                ? 'bg-sage-pale text-forest'
+                : 'text-mid-gray hover:bg-sage-pale/50 hover:text-charcoal'
+            }`}
+          >
+            <Settings size={18} strokeWidth={1.8} />
+            Settings
+          </NavLink>
+        )}
         <div className="flex items-center gap-3 px-3 py-3 mt-2">
           <div className="w-8 h-8 rounded-full bg-forest flex items-center justify-center">
             <span className="text-white text-xs font-semibold">{initials}</span>

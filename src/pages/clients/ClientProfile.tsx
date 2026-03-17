@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useStore } from '@/stores/useStore';
-import { formatDate, formatTime, formatCurrency, cn, getServiceTypeColor, generateId } from '@/lib/utils';
+import { formatDate, formatTime, formatDateTime, formatCurrency, cn, getServiceTypeColor, generateId } from '@/lib/utils';
 import StatusBadge from '@/components/ui/StatusBadge';
 import EmptyState from '@/components/ui/EmptyState';
 import AiSupportPlanGenerator, { generateSectionContent } from '@/components/ai/AiSupportPlanGenerator';
@@ -11,9 +11,9 @@ import {
   Phone, Mail, MapPin, Shield, Heart, AlertTriangle, Stethoscope,
   Clock, Download, Upload, File, FileImage, FileSpreadsheet,
   Edit2, Save, X, ChevronRight, Trash2, Sparkles, Plus,
-  ChevronUp, ChevronDown, Loader2, FileCode, FileType,
+  ChevronUp, ChevronDown, Loader2, FileCode, FileType, MessageSquare, Tag,
 } from 'lucide-react';
-import type { CarePlan, CarePlanGoal, AlliedHealthContact, Shift, CarePlanSection, CarePlanSectionType, ModularCarePlan } from '@/types';
+import type { CarePlan, CarePlanGoal, AlliedHealthContact, Shift, CarePlanSection, CarePlanSectionType, ModularCarePlan, ShiftNote, ShiftNoteType } from '@/types';
 import { format, parseISO, isWithinInterval } from 'date-fns';
 import { supabase } from '@/lib/supabase';
 import toast from 'react-hot-toast';
@@ -28,14 +28,21 @@ const SECTION_TYPE_OPTIONS: { value: CarePlanSectionType; label: string }[] = [
   { value: 'plan_overview', label: 'Plan Overview' },
   { value: 'support_needs', label: 'Support Needs' },
   { value: 'goals_and_outcomes', label: 'Goals & Outcomes' },
+  { value: 'short_term_goals', label: 'Short-Term Goals (0-12 months)' },
+  { value: 'long_term_goals', label: 'Long-Term Goals (12+ months)' },
+  { value: 'core_supports', label: 'Core Supports' },
+  { value: 'capacity_building_supports', label: 'Capacity Building Supports' },
+  { value: 'capital_supports', label: 'Capital Supports' },
   { value: 'risk_assessment', label: 'Risk Assessment' },
   { value: 'communication_plan', label: 'Communication Plan' },
   { value: 'daily_routine', label: 'Daily Routine' },
   { value: 'medication_management', label: 'Medication Management' },
   { value: 'behaviour_support', label: 'Behaviour Support' },
   { value: 'cultural_considerations', label: 'Cultural Considerations' },
+  { value: 'carer_contacts', label: 'Carer & Key Contacts' },
   { value: 'emergency_contacts', label: 'Emergency Contacts' },
   { value: 'review_schedule', label: 'Review Schedule' },
+  { value: 'sign_off', label: 'Review & Sign-Off' },
   { value: 'custom', label: 'Custom Section' },
 ];
 
@@ -57,18 +64,26 @@ function getDefaultSectionContent(type: CarePlanSectionType): string {
     cultural_considerations: 'Document cultural, religious, or spiritual considerations important to the participant\'s care.',
     emergency_contacts: 'List emergency contacts, their relationship to the participant, and contact details.',
     review_schedule: 'Outline the schedule for care plan reviews, including dates and responsible parties.',
+    short_term_goals: 'List short-term goals (0-12 months) with strategies/actions and target dates.',
+    long_term_goals: 'List long-term goals (12+ months) with strategies/actions and target dates.',
+    core_supports: 'List core support items including provider, frequency, and budget allocated.',
+    capacity_building_supports: 'List capacity building support items including provider, frequency, and budget allocated.',
+    capital_supports: 'List capital support items including provider, frequency, and budget allocated.',
+    carer_contacts: 'List carer and key contacts including name, relationship, phone, and email.',
+    sign_off: 'Review and sign-off section. Include date of review, participant acknowledgement, and representative sign-off.',
   };
   return defaults[type] || '';
 }
 
 // ── Tab types ───────────────────────────────────────────────────────────────
 
-type TabId = 'overview' | 'care-plan' | 'shifts' | 'invoices' | 'documents' | 'reviews';
+type TabId = 'overview' | 'care-plan' | 'shifts' | 'shift-notes' | 'invoices' | 'documents' | 'reviews';
 
 const TABS: { id: TabId; label: string; icon: typeof User }[] = [
   { id: 'overview', label: 'Overview', icon: User },
   { id: 'care-plan', label: 'Care Plan', icon: Heart },
   { id: 'shifts', label: 'Shifts', icon: Calendar },
+  { id: 'shift-notes', label: 'Shift Notes', icon: MessageSquare },
   { id: 'invoices', label: 'Invoices', icon: FileText },
   { id: 'documents', label: 'Documents', icon: FolderOpen },
   { id: 'reviews', label: 'Reviews', icon: Target },
@@ -95,8 +110,9 @@ export default function ClientProfile() {
   const {
     getClientById, getShiftsByClient, getInvoicesByClient,
     getCarePlanByClient, getDocumentsByClient,
-    getCarerById, updateCarePlan, addDocument, deleteDocument,
+    getCarerById, updateCarePlan, updateClient, addDocument, deleteDocument,
     getReviewsByClient, activityReviews,
+    getShiftNotesByClient, shiftNotes: allShiftNotes,
   } = useStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -138,6 +154,8 @@ export default function ClientProfile() {
   const [showAddSection, setShowAddSection] = useState(false);
   const [deletingSectionId, setDeletingSectionId] = useState<string | null>(null);
   const [exportingPdf, setExportingPdf] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
 
   // Initialize sections from care plan or localStorage
   useEffect(() => {
@@ -225,6 +243,19 @@ export default function ClientProfile() {
     if (!carePlan || !sectionsInitialized || sections.length === 0) return;
     localStorage.setItem(`care-plan-sections-${carePlan.id}`, JSON.stringify(sections));
   }, [sections, carePlan, sectionsInitialized]);
+
+  // Close export menu on click outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setShowExportMenu(false);
+      }
+    };
+    if (showExportMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showExportMenu]);
 
   if (!_client) {
     return (
@@ -530,6 +561,9 @@ export default function ClientProfile() {
             </div>
           </div>
         )}
+
+        {/* Interests & Preferences */}
+        <InterestsSection client={client} carePlan={carePlan} updateClient={updateClient} />
       </div>
     );
   }
@@ -696,34 +730,39 @@ export default function ClientProfile() {
             </button>
 
             {/* Export dropdown */}
-            <div className="relative group">
-              <button className="btn-secondary text-sm">
+            <div className="relative" ref={exportMenuRef}>
+              <button
+                onClick={() => setShowExportMenu((prev) => !prev)}
+                className="btn-secondary text-sm"
+              >
                 <Download size={14} /> Export
               </button>
-              <div className="absolute right-0 top-full mt-1 bg-white border border-sage-pale rounded-xl shadow-lg py-1 z-20 min-w-[180px] hidden group-hover:block">
-                <button
-                  onClick={handleExportPdf}
-                  disabled={exportingPdf}
-                  className="w-full text-left px-4 py-2 text-sm text-charcoal hover:bg-sage-pale/30 flex items-center gap-2 transition-colors"
-                >
-                  <FileText size={14} className="text-burgundy" />
-                  {exportingPdf ? 'Generating...' : 'Export PDF'}
-                </button>
-                <button
-                  onClick={handleExportDocx}
-                  className="w-full text-left px-4 py-2 text-sm text-charcoal hover:bg-sage-pale/30 flex items-center gap-2 transition-colors"
-                >
-                  <FileType size={14} className="text-blue-600" />
-                  Export Word (.docx)
-                </button>
-                <button
-                  onClick={handleExportXml}
-                  className="w-full text-left px-4 py-2 text-sm text-charcoal hover:bg-sage-pale/30 flex items-center gap-2 transition-colors"
-                >
-                  <FileCode size={14} className="text-forest" />
-                  Export XML
-                </button>
-              </div>
+              {showExportMenu && (
+                <div className="absolute right-0 top-full mt-1 bg-white border border-sage-pale rounded-xl shadow-lg py-1 z-20 min-w-[180px]">
+                  <button
+                    onClick={() => { handleExportPdf(); setShowExportMenu(false); }}
+                    disabled={exportingPdf}
+                    className="w-full text-left px-4 py-2 text-sm text-charcoal hover:bg-sage-pale/30 flex items-center gap-2 transition-colors"
+                  >
+                    <FileText size={14} className="text-burgundy" />
+                    {exportingPdf ? 'Generating...' : 'Export PDF'}
+                  </button>
+                  <button
+                    onClick={() => { handleExportDocx(); setShowExportMenu(false); }}
+                    className="w-full text-left px-4 py-2 text-sm text-charcoal hover:bg-sage-pale/30 flex items-center gap-2 transition-colors"
+                  >
+                    <FileType size={14} className="text-blue-600" />
+                    Export Word (.docx)
+                  </button>
+                  <button
+                    onClick={() => { handleExportXml(); setShowExportMenu(false); }}
+                    className="w-full text-left px-4 py-2 text-sm text-charcoal hover:bg-sage-pale/30 flex items-center gap-2 transition-colors"
+                  >
+                    <FileCode size={14} className="text-forest" />
+                    Export XML
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1069,7 +1108,7 @@ export default function ClientProfile() {
                   <td className="table-cell">{formatDate(invoice.dueDate)}</td>
                   <td className="table-cell">
                     <button
-                      onClick={() => navigate(`/invoices/${invoice.id}/edit`)}
+                      onClick={() => navigate(`/invoices/${invoice.id}/edit`, { state: { from: `/clients/${id}?tab=invoices` } })}
                       className="text-forest hover:text-forest-mid text-sm font-medium flex items-center gap-1 transition-colors"
                     >
                       View <ChevronRight size={14} />
@@ -1358,10 +1397,67 @@ export default function ClientProfile() {
     );
   }
 
+  // ── Shift Notes tab ──
+
+  const NOTE_TYPE_COLORS: Record<ShiftNoteType, string> = {
+    general: 'bg-sage-pale text-forest',
+    progress: 'bg-blue-100 text-blue-700',
+    incident: 'bg-red-100 text-red-700',
+    medication: 'bg-purple-100 text-purple-700',
+    behaviour: 'bg-amber-100 text-amber-700',
+  };
+
+  function renderShiftNotes() {
+    const clientShiftNotes = getShiftNotesByClient(id ?? '');
+    const sortedNotes = [...clientShiftNotes].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+
+    if (sortedNotes.length === 0) {
+      return (
+        <EmptyState
+          icon={MessageSquare}
+          title="No shift notes"
+          description="Shift notes will appear here once they are recorded during shifts."
+        />
+      );
+    }
+
+    return (
+      <div className="space-y-3">
+        <p className="text-sm text-mid-gray">{sortedNotes.length} shift note{sortedNotes.length !== 1 ? 's' : ''} for this participant</p>
+        {sortedNotes.map((note) => {
+          const carer = getCarerById(note.carerId);
+          const shift = shifts.find((s) => s.id === note.shiftId);
+          return (
+            <div key={note.id} className="card p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 flex-wrap mb-1">
+                    <span className={cn('text-xs px-2 py-0.5 rounded-full font-medium', NOTE_TYPE_COLORS[note.noteType] || 'bg-sage-pale text-forest')}>
+                      {note.noteType.charAt(0).toUpperCase() + note.noteType.slice(1)}
+                    </span>
+                    <span className="text-xs text-mid-gray">{formatDateTime(note.timestamp)}</span>
+                  </div>
+                  <p className="text-xs text-mid-gray mb-2">
+                    Carer: <span className="font-medium text-charcoal">{carer ? `${carer.firstName} ${carer.lastName}` : 'Unknown'}</span>
+                    {shift && (
+                      <> | Shift: {formatDate(shift.date)} {formatTime(shift.startTime)}-{formatTime(shift.endTime)} ({shift.serviceType})</>
+                    )}
+                  </p>
+                  <p className="text-sm text-charcoal whitespace-pre-wrap">{note.content}</p>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
   const tabContent: Record<TabId, () => React.JSX.Element> = {
     overview: renderOverview,
     'care-plan': renderCarePlan,
     shifts: renderShifts,
+    'shift-notes': renderShiftNotes,
     invoices: renderInvoices,
     documents: renderDocuments,
     reviews: renderReviews,
@@ -1413,6 +1509,117 @@ export default function ClientProfile() {
 
       {/* Tab content */}
       {tabContent[activeTab]()}
+    </div>
+  );
+}
+
+// ── Interests Section Component ──
+
+interface InterestsSectionProps {
+  client: import('@/types').Client;
+  carePlan: CarePlan | undefined;
+  updateClient: (id: string, data: Partial<import('@/types').Client>) => Promise<void>;
+}
+
+function InterestsSection({ client, carePlan, updateClient }: InterestsSectionProps) {
+  const [showInput, setShowInput] = useState(false);
+  const [inputValue, setInputValue] = useState('');
+
+  // Auto-populate from care plan if no interests set yet
+  const interests = useMemo(() => {
+    if (client.interests && client.interests.length > 0) {
+      return client.interests;
+    }
+    // Auto-populate from care plan's likesAndPreferences
+    if (carePlan?.likesAndPreferences) {
+      const parsed = carePlan.likesAndPreferences
+        .split(/[,;\n]+/)
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0 && s.length < 50);
+      if (parsed.length > 0) {
+        // Save these to the client so they persist
+        updateClient(client.id, { interests: parsed }).catch(() => {});
+        return parsed;
+      }
+    }
+    return [];
+  }, [client.interests, client.id, carePlan?.likesAndPreferences, updateClient]);
+
+  const addInterest = () => {
+    const trimmed = inputValue.trim();
+    if (!trimmed) return;
+    if (interests.includes(trimmed)) {
+      setInputValue('');
+      return;
+    }
+    const updated = [...interests, trimmed];
+    updateClient(client.id, { interests: updated });
+    setInputValue('');
+  };
+
+  const removeInterest = (tag: string) => {
+    const updated = interests.filter((i) => i !== tag);
+    updateClient(client.id, { interests: updated });
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addInterest();
+    }
+  };
+
+  return (
+    <div className="card col-span-3">
+      <h3 className="text-sm font-semibold text-charcoal mb-4 flex items-center gap-2">
+        <Tag size={16} className="text-forest" /> Interests & Preferences
+      </h3>
+      <div className="flex flex-wrap gap-2 mb-3">
+        {interests.length === 0 && !showInput && (
+          <p className="text-sm text-mid-gray italic">No interests added yet.</p>
+        )}
+        {interests.map((tag) => (
+          <span
+            key={tag}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-sage-pale text-forest text-xs font-medium rounded-full"
+          >
+            {tag}
+            <button
+              onClick={() => removeInterest(tag)}
+              className="hover:text-burgundy transition-colors"
+            >
+              <X size={12} />
+            </button>
+          </span>
+        ))}
+      </div>
+      {showInput ? (
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyDown={handleKeyDown}
+            className="input-field text-sm flex-1"
+            placeholder="Enter an interest or preference..."
+            autoFocus
+          />
+          <button onClick={addInterest} className="btn-primary text-xs">
+            Add
+          </button>
+          <button onClick={() => { setShowInput(false); setInputValue(''); }} className="btn-ghost text-xs">
+            Cancel
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={() => setShowInput(true)}
+          className="btn-ghost text-xs flex items-center gap-1"
+        >
+          <Plus size={14} />
+          Add Interest
+        </button>
+      )}
     </div>
   );
 }
