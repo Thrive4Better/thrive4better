@@ -13,6 +13,7 @@ import {
   ClipboardList,
   X,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   Save,
   Send,
@@ -699,9 +700,16 @@ function DocumentViewModal({ doc, currentSection, onSectionChange, onClose, onDo
                 <div className="flex items-center justify-between">
                   <div>
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-white/20 flex items-center justify-center">
-                        <span className="text-white font-bold text-lg">T4B</span>
-                      </div>
+                      <img
+                        src="https://www.thrive4better.com/thrive4better-logo.png"
+                        alt="Thrive 4 Better"
+                        className="w-10 h-10 rounded-lg object-contain bg-white/20 p-0.5"
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          target.style.display = 'none';
+                          target.insertAdjacentHTML('afterend', '<div class="w-10 h-10 rounded-lg bg-white/20 flex items-center justify-center"><span class="text-white font-bold text-lg">T4B</span></div>');
+                        }}
+                      />
                       <div>
                         <h2 className="text-white font-bold text-lg">{COMPANY_NAME}</h2>
                         <p className="text-white/70 text-xs">{COMPANY_ABN}</p>
@@ -743,26 +751,8 @@ function DocumentViewModal({ doc, currentSection, onSectionChange, onClose, onDo
                   </div>
                 </div>
 
-                {/* Section navigation */}
-                <div className="flex items-center justify-between mt-10 pt-4 border-t border-gray-200">
-                  <button
-                    onClick={() => onSectionChange(Math.max(0, currentSection - 1))}
-                    disabled={currentSection === 0}
-                    className="btn-ghost text-sm disabled:opacity-30"
-                  >
-                    Previous Section
-                  </button>
-                  <span className="text-xs text-mid-gray">
-                    Section {currentSection + 1} of {doc.sections.length}
-                  </span>
-                  <button
-                    onClick={() => onSectionChange(Math.min(doc.sections.length - 1, currentSection + 1))}
-                    disabled={currentSection === doc.sections.length - 1}
-                    className="btn-ghost text-sm disabled:opacity-30"
-                  >
-                    Next Section
-                  </button>
-                </div>
+                {/* Spacer so content doesn't get hidden behind fixed nav */}
+                <div className="h-16" />
               </div>
 
               {/* Page footer */}
@@ -776,6 +766,29 @@ function DocumentViewModal({ doc, currentSection, onSectionChange, onClose, onDo
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Fixed section navigation footer */}
+        <div className="flex items-center justify-between px-6 py-3 bg-white border-t border-gray-200 rounded-b-2xl flex-shrink-0">
+          <button
+            onClick={() => onSectionChange(Math.max(0, currentSection - 1))}
+            disabled={currentSection === 0}
+            className="btn-ghost text-sm disabled:opacity-30 flex items-center gap-1.5"
+          >
+            <ChevronLeft size={16} />
+            Previous Section
+          </button>
+          <span className="text-xs text-mid-gray font-medium">
+            Section {currentSection + 1} of {doc.sections.length}
+          </span>
+          <button
+            onClick={() => onSectionChange(Math.min(doc.sections.length - 1, currentSection + 1))}
+            disabled={currentSection === doc.sections.length - 1}
+            className="btn-ghost text-sm disabled:opacity-30 flex items-center gap-1.5"
+          >
+            Next Section
+            <ChevronRight size={16} />
+          </button>
         </div>
       </div>
     </div>
