@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import type { User, Session } from '@supabase/supabase-js';
-import { supabase } from '@/lib/supabase';
+import { supabase, withTimeout } from '@/lib/supabase';
 import type { UserRole } from '@/types';
 
 // ── Logging utility ──
@@ -39,11 +39,15 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 async function fetchProfile(userId: string): Promise<UserProfile | null> {
   log('Fetching profile for user:', userId);
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('id, full_name, role, carer_id, avatar_url, phone')
-    .eq('id', userId)
-    .single();
+  const { data, error } = await withTimeout(
+    supabase
+      .from('profiles')
+      .select('id, full_name, role, carer_id, avatar_url, phone')
+      .eq('id', userId)
+      .single(),
+    8000,
+    'fetchProfile',
+  );
 
   if (error) {
     logError('Profile fetch failed:', error.message, error.code, error.details);

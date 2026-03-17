@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import { supabase, withTimeout } from '@/lib/supabase';
 import {
   toClient,
   fromClient,
@@ -778,13 +778,14 @@ export async function fetchAllData(): Promise<{
   console.log('[Store] Fetching all data...');
 
   // Fetch each independently so one failure doesn't block everything
+  // Each query has a 10s timeout to prevent infinite hangs
   const safelyFetch = async <T>(name: string, fn: () => Promise<T[]>): Promise<T[]> => {
     try {
-      const result = await fn();
-      console.log(`[Store] ${name}: ${result.length} records`);
+      const result = await withTimeout(fn(), 10000, name);
+      console.log(`[Store] ✓ ${name}: ${result.length} records`);
       return result;
     } catch (err) {
-      console.error(`[Store] Failed to fetch ${name}:`, err);
+      console.error(`[Store] ✗ ${name} failed:`, err instanceof Error ? err.message : err);
       return [];
     }
   };
