@@ -219,9 +219,24 @@ export default function ReminderSettings() {
         )}
       </div>
 
-      {/* Save & Test Buttons */}
-      <div className="flex items-center justify-between">
+      {/* Test Notifications */}
+      <div className="card p-5">
+        <div className="flex items-center gap-3 mb-3">
+          <div className="p-2 rounded-lg bg-forest/10 text-forest">
+            <Send size={20} />
+          </div>
+          <div>
+            <h3 className="text-base font-semibold text-charcoal">Test Notifications</h3>
+            <p className="text-xs text-mid-gray">
+              Send all 17 notification templates to your Thrive4Better admin email to verify formatting and delivery before going live.
+            </p>
+          </div>
+        </div>
         <SendTestEmailsButton />
+      </div>
+
+      {/* Save Button */}
+      <div className="flex justify-end">
         <button onClick={handleSave} className="btn-primary">
           Save Reminder Settings
         </button>

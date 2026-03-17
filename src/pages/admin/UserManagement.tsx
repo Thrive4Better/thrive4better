@@ -3,7 +3,7 @@ import { useStore } from '@/stores/useStore';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import SlideOver from '@/components/ui/SlideOver';
-import { UserPlus, Link, Unlink, ChevronDown, Shield, Power, Check } from 'lucide-react';
+import { UserPlus, Link, Unlink, ChevronDown, Shield, Power, Check, Plus, Pencil, Trash2, Users, ShieldCheck } from 'lucide-react';
 import type { UserRole } from '@/types';
 import {
   ALL_PERMISSIONS,
@@ -14,6 +14,43 @@ import {
 } from '@/lib/permissions';
 import toast from 'react-hot-toast';
 import { generateId } from '@/lib/utils';
+
+// ── Custom Role types & localStorage ──
+
+interface CustomRole {
+  id: string;
+  name: string;
+  isBuiltIn: boolean;
+  permissions: Permission[];
+}
+
+const CUSTOM_ROLES_KEY = 't4b_customRoles';
+
+const BUILT_IN_ROLES: CustomRole[] = [
+  { id: 'admin', name: 'Admin', isBuiltIn: true, permissions: ROLE_DEFAULTS.admin },
+  { id: 'manager', name: 'Manager', isBuiltIn: true, permissions: ROLE_DEFAULTS.manager },
+  { id: 'staff', name: 'Staff', isBuiltIn: true, permissions: ROLE_DEFAULTS.staff },
+  { id: 'client', name: 'Client', isBuiltIn: true, permissions: ROLE_DEFAULTS.client },
+];
+
+function loadCustomRoles(): CustomRole[] {
+  try {
+    const raw = localStorage.getItem(CUSTOM_ROLES_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveCustomRoles(roles: CustomRole[]) {
+  localStorage.setItem(CUSTOM_ROLES_KEY, JSON.stringify(roles));
+}
+
+function getAllRoles(customRoles: CustomRole[]): CustomRole[] {
+  return [...BUILT_IN_ROLES, ...customRoles];
+}
+
+// ── Profile & helpers ──
 
 interface ProfileRow {
   id: string;
@@ -52,9 +89,13 @@ async function callManageUser(body: Record<string, unknown>) {
   return json;
 }
 
+type TabKey = 'users' | 'roles';
+
 export default function UserManagement() {
   const { user } = useAuth();
   const carers = useStore((s) => s.carers);
+
+  const [activeTab, setActiveTab] = useState<TabKey>('users');
 
   const [profiles, setProfiles] = useState<ProfileRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -73,6 +114,15 @@ export default function UserManagement() {
   const [permRole, setPermRole] = useState<UserRole>('staff');
   const [permChecked, setPermChecked] = useState<Set<Permission>>(new Set());
   const [savingPerms, setSavingPerms] = useState(false);
+
+  // Custom roles state
+  const [customRoles, setCustomRoles] = useState<CustomRole[]>(() => loadCustomRoles());
+  const [editingRole, setEditingRole] = useState<CustomRole | null>(null);
+  const [roleFormName, setRoleFormName] = useState('');
+  const [roleFormPerms, setRoleFormPerms] = useState<Set<Permission>>(new Set());
+  const [showNewRole, setShowNewRole] = useState(false);
+
+  const allRoles = getAllRoles(customRoles);
 
   // Fetch profiles
   const fetchProfiles = useCallback(async (signal?: AbortSignal) => {
@@ -177,21 +227,32 @@ export default function UserManagement() {
     }
   };
 
-  // Open permissions slide-over
+  // Open permissions slide-over -- now uses custom role defaults too
   const openPermissions = (profile: ProfileRow) => {
     setPermTarget(profile);
     setPermRole(profile.role);
-    // If user has custom permissions, use those; otherwise use role defaults
+    // If user has custom permissions, use those; otherwise use role defaults (including custom roles)
     const existing = profile.permissions && profile.permissions.length > 0
       ? profile.permissions
-      : ROLE_DEFAULTS[profile.role] ?? [];
+      : getPermissionsForRole(profile.role);
     setPermChecked(new Set(existing));
+  };
+
+  // Get permissions for a role (built-in or custom)
+  const getPermissionsForRole = (role: string): Permission[] => {
+    // Check built-in first
+    if (ROLE_DEFAULTS[role as UserRole]) {
+      return ROLE_DEFAULTS[role as UserRole];
+    }
+    // Check custom roles
+    const custom = customRoles.find((r) => r.id === role);
+    return custom ? custom.permissions : ROLE_DEFAULTS.staff;
   };
 
   // When role changes in the permissions panel, fill defaults
   const handlePermRoleChange = (newRole: UserRole) => {
     setPermRole(newRole);
-    setPermChecked(new Set(ROLE_DEFAULTS[newRole] ?? []));
+    setPermChecked(new Set(getPermissionsForRole(newRole)));
   };
 
   // Toggle single permission
@@ -278,193 +339,446 @@ export default function UserManagement() {
   // Check if current permissions match role defaults
   const isDefaultPerms = permTarget
     ? (() => {
-        const defaults = new Set(ROLE_DEFAULTS[permRole] ?? []);
+        const defaults = new Set(getPermissionsForRole(permRole));
         return permChecked.size === defaults.size && [...permChecked].every((p) => defaults.has(p));
       })()
     : true;
+
+  // ── Role management helpers ──
+
+  const openNewRole = () => {
+    setShowNewRole(true);
+    setEditingRole(null);
+    setRoleFormName('');
+    setRoleFormPerms(new Set(ROLE_DEFAULTS.staff)); // default to staff permissions as starting point
+  };
+
+  const openEditRole = (role: CustomRole) => {
+    setEditingRole(role);
+    setShowNewRole(false);
+    setRoleFormName(role.name);
+    setRoleFormPerms(new Set(role.permissions));
+  };
+
+  const handleSaveRole = () => {
+    const name = roleFormName.trim();
+    if (!name) {
+      toast.error('Role name is required');
+      return;
+    }
+
+    // Check for duplicate names
+    const existingNames = allRoles
+      .filter((r) => r.id !== editingRole?.id)
+      .map((r) => r.name.toLowerCase());
+    if (existingNames.includes(name.toLowerCase())) {
+      toast.error('A role with this name already exists');
+      return;
+    }
+
+    const permsArray = Array.from(roleFormPerms);
+
+    if (editingRole) {
+      // Editing existing custom role
+      const updated = customRoles.map((r) =>
+        r.id === editingRole.id ? { ...r, name, permissions: permsArray } : r
+      );
+      setCustomRoles(updated);
+      saveCustomRoles(updated);
+      toast.success('Role updated');
+      setEditingRole(null);
+    } else {
+      // Creating new role
+      const newRole: CustomRole = {
+        id: `custom_${generateId()}`,
+        name,
+        isBuiltIn: false,
+        permissions: permsArray,
+      };
+      const updated = [...customRoles, newRole];
+      setCustomRoles(updated);
+      saveCustomRoles(updated);
+      toast.success('Role created');
+      setShowNewRole(false);
+    }
+    setRoleFormName('');
+    setRoleFormPerms(new Set());
+  };
+
+  const handleDeleteRole = (roleId: string) => {
+    const updated = customRoles.filter((r) => r.id !== roleId);
+    setCustomRoles(updated);
+    saveCustomRoles(updated);
+    toast.success('Role deleted');
+    if (editingRole?.id === roleId) {
+      setEditingRole(null);
+    }
+  };
+
+  const toggleRoleFormPerm = (perm: Permission) => {
+    setRoleFormPerms((prev) => {
+      const next = new Set(prev);
+      if (next.has(perm)) next.delete(perm);
+      else next.add(perm);
+      return next;
+    });
+  };
+
+  const toggleRoleFormGroup = (perms: Permission[], select: boolean) => {
+    setRoleFormPerms((prev) => {
+      const next = new Set(prev);
+      perms.forEach((p) => (select ? next.add(p) : next.delete(p)));
+      return next;
+    });
+  };
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold text-charcoal">User Management</h1>
-        <button onClick={() => setInviteOpen(true)} className="btn-primary">
-          <UserPlus size={16} /> Invite User
+        {activeTab === 'users' && (
+          <button onClick={() => setInviteOpen(true)} className="btn-primary">
+            <UserPlus size={16} /> Invite User
+          </button>
+        )}
+        {activeTab === 'roles' && (
+          <button onClick={openNewRole} className="btn-primary">
+            <Plus size={16} /> Create Role
+          </button>
+        )}
+      </div>
+
+      {/* Tabs */}
+      <div className="flex border-b border-sage-pale">
+        <button
+          onClick={() => setActiveTab('users')}
+          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === 'users'
+              ? 'border-forest text-forest'
+              : 'border-transparent text-mid-gray hover:text-charcoal hover:border-sage-pale'
+          }`}
+        >
+          <Users size={16} />
+          Users
+        </button>
+        <button
+          onClick={() => setActiveTab('roles')}
+          className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === 'roles'
+              ? 'border-forest text-forest'
+              : 'border-transparent text-mid-gray hover:text-charcoal hover:border-sage-pale'
+          }`}
+        >
+          <ShieldCheck size={16} />
+          Roles
         </button>
       </div>
 
-      {/* Users Table */}
-      <div className="card">
-        {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <svg className="animate-spin h-8 w-8 text-forest" viewBox="0 0 24 24" fill="none">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-            </svg>
-          </div>
-        ) : error ? (
-          <div className="text-center py-8">
-            <p className="text-sm text-burgundy mb-3">{error}</p>
-            <button onClick={() => fetchProfiles()} className="btn-secondary text-sm">
-              Retry
-            </button>
-          </div>
-        ) : profiles.length === 0 ? (
-          <p className="text-sm text-mid-gray py-8 text-center">No users found</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-sage-pale">
-                  <th className="table-header">Name</th>
-                  <th className="table-header">Status</th>
-                  <th className="table-header">Role</th>
-                  <th className="table-header">Linked Carer</th>
-                  <th className="table-header">Created</th>
-                  <th className="table-header">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {profiles.map((profile) => {
-                  const isSelf = profile.id === user?.id;
-                  return (
-                    <tr key={profile.id} className="border-b border-sage-pale/50 hover:bg-sage-pale/20">
-                      <td className="table-cell">
-                        <div className="flex items-center gap-3">
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${profile.is_active ? 'bg-forest' : 'bg-mid-gray'}`}>
-                            <span className="text-white text-xs font-semibold">
-                              {(profile.full_name || '?')
-                                .split(' ')
-                                .slice(0, 2)
-                                .map((s) => s[0]?.toUpperCase())
-                                .join('')}
+      {/* ═══════ USERS TAB ═══════ */}
+      {activeTab === 'users' && (
+        <div className="card">
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <svg className="animate-spin h-8 w-8 text-forest" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+            </div>
+          ) : error ? (
+            <div className="text-center py-8">
+              <p className="text-sm text-burgundy mb-3">{error}</p>
+              <button onClick={() => fetchProfiles()} className="btn-secondary text-sm">
+                Retry
+              </button>
+            </div>
+          ) : profiles.length === 0 ? (
+            <p className="text-sm text-mid-gray py-8 text-center">No users found</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-sage-pale">
+                    <th className="table-header">Name</th>
+                    <th className="table-header">Status</th>
+                    <th className="table-header">Role</th>
+                    <th className="table-header">Linked Carer</th>
+                    <th className="table-header">Created</th>
+                    <th className="table-header">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {profiles.map((profile) => {
+                    const isSelf = profile.id === user?.id;
+                    return (
+                      <tr key={profile.id} className="border-b border-sage-pale/50 hover:bg-sage-pale/20">
+                        <td className="table-cell">
+                          <div className="flex items-center gap-3">
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${profile.is_active ? 'bg-forest' : 'bg-mid-gray'}`}>
+                              <span className="text-white text-xs font-semibold">
+                                {(profile.full_name || '?')
+                                  .split(' ')
+                                  .slice(0, 2)
+                                  .map((s) => s[0]?.toUpperCase())
+                                  .join('')}
+                              </span>
+                            </div>
+                            <div>
+                              <p className={`text-sm font-medium ${profile.is_active ? 'text-charcoal' : 'text-mid-gray'}`}>
+                                {profile.full_name || 'Unnamed'}
+                              </p>
+                              <p className="text-xs text-mid-gray">{profile.phone || ''}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="table-cell">
+                          {profile.is_active ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                              <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                              Active
                             </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                              <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                              Deactivated
+                            </span>
+                          )}
+                        </td>
+                        <td className="table-cell">
+                          {isSelf ? (
+                            <span className={`badge ${roleBadgeStyles[profile.role] || 'bg-purple-100 text-purple-800'}`}>{profile.role}</span>
+                          ) : (
+                            <div className="relative inline-block">
+                              <select
+                                value={profile.role}
+                                onChange={(e) => handleRoleChange(profile.id, e.target.value as UserRole)}
+                                className="appearance-none bg-transparent pr-6 pl-2 py-1 rounded-md border border-sage-pale text-sm text-charcoal cursor-pointer focus:outline-none focus:ring-2 focus:ring-forest/20"
+                              >
+                                <option value="admin">admin</option>
+                                <option value="manager">manager</option>
+                                <option value="staff">staff</option>
+                                {customRoles.map((cr) => (
+                                  <option key={cr.id} value={cr.id}>{cr.name}</option>
+                                ))}
+                              </select>
+                              <ChevronDown size={14} className="absolute right-1 top-1/2 -translate-y-1/2 text-mid-gray pointer-events-none" />
+                            </div>
+                          )}
+                        </td>
+                        <td className="table-cell">
+                          {profile.carer_id ? (
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm text-charcoal">{getCarerName(profile.carer_id)}</span>
+                              {!isSelf && (
+                                <button
+                                  onClick={() => handleLinkCarer(profile.id, '')}
+                                  className="p-1 rounded hover:bg-red-50 text-mid-gray hover:text-burgundy transition-colors"
+                                  title="Unlink carer"
+                                >
+                                  <Unlink size={14} />
+                                </button>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm text-mid-gray">-</span>
+                              {!isSelf && unlinkedCarers.length > 0 && (
+                                <div className="relative inline-block">
+                                  <select
+                                    value=""
+                                    onChange={(e) => handleLinkCarer(profile.id, e.target.value)}
+                                    className="appearance-none bg-transparent pl-1 pr-5 py-1 rounded-md border border-sage-pale text-xs text-forest cursor-pointer focus:outline-none focus:ring-2 focus:ring-forest/20"
+                                  >
+                                    <option value="" disabled>Link...</option>
+                                    {unlinkedCarers.map((c) => (
+                                      <option key={c.id} value={c.id}>
+                                        {c.firstName} {c.lastName}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <Link size={12} className="absolute right-1 top-1/2 -translate-y-1/2 text-forest pointer-events-none" />
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                        <td className="table-cell text-sm text-mid-gray">
+                          {profile.created_at ? new Date(profile.created_at).toLocaleDateString('en-AU') : '-'}
+                        </td>
+                        <td className="table-cell">
+                          <div className="flex items-center gap-2">
+                            {isSelf ? (
+                              <span className="text-xs text-mid-gray italic">You</span>
+                            ) : (
+                              <>
+                                {/* Activate / Deactivate toggle */}
+                                <button
+                                  onClick={() => handleToggleActive(profile)}
+                                  disabled={togglingStatus === profile.id}
+                                  className={`p-1.5 rounded-lg transition-colors text-xs font-medium flex items-center gap-1 ${
+                                    profile.is_active
+                                      ? 'hover:bg-red-50 text-red-600 hover:text-red-700'
+                                      : 'hover:bg-green-50 text-green-600 hover:text-green-700'
+                                  } disabled:opacity-50`}
+                                  title={profile.is_active ? 'Deactivate user' : 'Activate user'}
+                                >
+                                  <Power size={14} />
+                                  {togglingStatus === profile.id
+                                    ? '...'
+                                    : profile.is_active
+                                    ? 'Deactivate'
+                                    : 'Activate'}
+                                </button>
+
+                                {/* Edit Permissions */}
+                                <button
+                                  onClick={() => openPermissions(profile)}
+                                  className="p-1.5 rounded-lg hover:bg-sage-pale text-forest transition-colors text-xs font-medium flex items-center gap-1"
+                                  title="Edit permissions"
+                                >
+                                  <Shield size={14} />
+                                  Permissions
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ═══════ ROLES TAB ═══════ */}
+      {activeTab === 'roles' && (
+        <div className="space-y-6">
+          {/* New role form */}
+          {showNewRole && (
+            <RoleFormCard
+              title="Create New Role"
+              roleName={roleFormName}
+              onRoleNameChange={setRoleFormName}
+              permissions={roleFormPerms}
+              onTogglePerm={toggleRoleFormPerm}
+              onToggleGroup={toggleRoleFormGroup}
+              onSave={handleSaveRole}
+              onCancel={() => {
+                setShowNewRole(false);
+                setRoleFormName('');
+                setRoleFormPerms(new Set());
+              }}
+              isBuiltIn={false}
+            />
+          )}
+
+          {/* Edit role form */}
+          {editingRole && (
+            <RoleFormCard
+              title={`Edit Role: ${editingRole.name}`}
+              roleName={roleFormName}
+              onRoleNameChange={editingRole.isBuiltIn ? undefined : setRoleFormName}
+              permissions={roleFormPerms}
+              onTogglePerm={editingRole.isBuiltIn ? undefined : toggleRoleFormPerm}
+              onToggleGroup={editingRole.isBuiltIn ? undefined : toggleRoleFormGroup}
+              onSave={editingRole.isBuiltIn ? undefined : handleSaveRole}
+              onCancel={() => {
+                setEditingRole(null);
+                setRoleFormName('');
+                setRoleFormPerms(new Set());
+              }}
+              isBuiltIn={editingRole.isBuiltIn}
+            />
+          )}
+
+          {/* Role list */}
+          <div className="space-y-3">
+            <h2 className="text-sm font-semibold text-mid-gray uppercase tracking-wide">Built-in Roles</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {BUILT_IN_ROLES.map((role) => (
+                <div
+                  key={role.id}
+                  className="card p-4 flex flex-col gap-3 hover:shadow-md transition-shadow cursor-pointer"
+                  onClick={() => openEditRole(role)}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${roleBadgeStyles[role.id] || 'bg-sage-pale text-forest'}`}>
+                        <ShieldCheck size={16} />
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-charcoal">{role.name}</p>
+                        <p className="text-xs text-mid-gray">Built-in</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-xs text-mid-gray">
+                    {role.permissions.length} permission{role.permissions.length !== 1 ? 's' : ''}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {customRoles.length > 0 && (
+              <>
+                <h2 className="text-sm font-semibold text-mid-gray uppercase tracking-wide mt-6">Custom Roles</h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {customRoles.map((role) => (
+                    <div
+                      key={role.id}
+                      className="card p-4 flex flex-col gap-3 hover:shadow-md transition-shadow"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-purple-100 text-purple-700">
+                            <Shield size={16} />
                           </div>
                           <div>
-                            <p className={`text-sm font-medium ${profile.is_active ? 'text-charcoal' : 'text-mid-gray'}`}>
-                              {profile.full_name || 'Unnamed'}
-                            </p>
-                            <p className="text-xs text-mid-gray">{profile.phone || ''}</p>
+                            <p className="text-sm font-semibold text-charcoal">{role.name}</p>
+                            <p className="text-xs text-mid-gray">Custom</p>
                           </div>
                         </div>
-                      </td>
-                      <td className="table-cell">
-                        {profile.is_active ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                            <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                            Active
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                            <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
-                            Deactivated
-                          </span>
-                        )}
-                      </td>
-                      <td className="table-cell">
-                        {isSelf ? (
-                          <span className={`badge ${roleBadgeStyles[profile.role]}`}>{profile.role}</span>
-                        ) : (
-                          <div className="relative inline-block">
-                            <select
-                              value={profile.role}
-                              onChange={(e) => handleRoleChange(profile.id, e.target.value as UserRole)}
-                              className="appearance-none bg-transparent pr-6 pl-2 py-1 rounded-md border border-sage-pale text-sm text-charcoal cursor-pointer focus:outline-none focus:ring-2 focus:ring-forest/20"
-                            >
-                              <option value="admin">admin</option>
-                              <option value="manager">manager</option>
-                              <option value="staff">staff</option>
-                            </select>
-                            <ChevronDown size={14} className="absolute right-1 top-1/2 -translate-y-1/2 text-mid-gray pointer-events-none" />
-                          </div>
-                        )}
-                      </td>
-                      <td className="table-cell">
-                        {profile.carer_id ? (
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm text-charcoal">{getCarerName(profile.carer_id)}</span>
-                            {!isSelf && (
-                              <button
-                                onClick={() => handleLinkCarer(profile.id, '')}
-                                className="p-1 rounded hover:bg-red-50 text-mid-gray hover:text-burgundy transition-colors"
-                                title="Unlink carer"
-                              >
-                                <Unlink size={14} />
-                              </button>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm text-mid-gray">-</span>
-                            {!isSelf && unlinkedCarers.length > 0 && (
-                              <div className="relative inline-block">
-                                <select
-                                  value=""
-                                  onChange={(e) => handleLinkCarer(profile.id, e.target.value)}
-                                  className="appearance-none bg-transparent pl-1 pr-5 py-1 rounded-md border border-sage-pale text-xs text-forest cursor-pointer focus:outline-none focus:ring-2 focus:ring-forest/20"
-                                >
-                                  <option value="" disabled>Link...</option>
-                                  {unlinkedCarers.map((c) => (
-                                    <option key={c.id} value={c.id}>
-                                      {c.firstName} {c.lastName}
-                                    </option>
-                                  ))}
-                                </select>
-                                <Link size={12} className="absolute right-1 top-1/2 -translate-y-1/2 text-forest pointer-events-none" />
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </td>
-                      <td className="table-cell text-sm text-mid-gray">
-                        {profile.created_at ? new Date(profile.created_at).toLocaleDateString('en-AU') : '-'}
-                      </td>
-                      <td className="table-cell">
-                        <div className="flex items-center gap-2">
-                          {isSelf ? (
-                            <span className="text-xs text-mid-gray italic">You</span>
-                          ) : (
-                            <>
-                              {/* Activate / Deactivate toggle */}
-                              <button
-                                onClick={() => handleToggleActive(profile)}
-                                disabled={togglingStatus === profile.id}
-                                className={`p-1.5 rounded-lg transition-colors text-xs font-medium flex items-center gap-1 ${
-                                  profile.is_active
-                                    ? 'hover:bg-red-50 text-red-600 hover:text-red-700'
-                                    : 'hover:bg-green-50 text-green-600 hover:text-green-700'
-                                } disabled:opacity-50`}
-                                title={profile.is_active ? 'Deactivate user' : 'Activate user'}
-                              >
-                                <Power size={14} />
-                                {togglingStatus === profile.id
-                                  ? '...'
-                                  : profile.is_active
-                                  ? 'Deactivate'
-                                  : 'Activate'}
-                              </button>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => openEditRole(role)}
+                            className="p-1 rounded hover:bg-sage-pale text-mid-gray hover:text-forest transition-colors"
+                            title="Edit role"
+                          >
+                            <Pencil size={14} />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteRole(role.id)}
+                            className="p-1 rounded hover:bg-red-50 text-mid-gray hover:text-burgundy transition-colors"
+                            title="Delete role"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="text-xs text-mid-gray">
+                        {role.permissions.length} permission{role.permissions.length !== 1 ? 's' : ''}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
 
-                              {/* Edit Permissions */}
-                              <button
-                                onClick={() => openPermissions(profile)}
-                                className="p-1.5 rounded-lg hover:bg-sage-pale text-forest transition-colors text-xs font-medium flex items-center gap-1"
-                                title="Edit permissions"
-                              >
-                                <Shield size={14} />
-                                Permissions
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            {customRoles.length === 0 && !showNewRole && (
+              <div className="text-center py-8 border border-dashed border-sage-pale rounded-xl">
+                <ShieldCheck size={28} className="mx-auto text-sage mb-2" />
+                <p className="text-sm text-mid-gray mb-3">No custom roles yet</p>
+                <button onClick={openNewRole} className="btn-secondary text-sm">
+                  <Plus size={14} /> Create your first custom role
+                </button>
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Invite SlideOver */}
       <SlideOver open={inviteOpen} onClose={() => setInviteOpen(false)} title="Invite User">
@@ -489,6 +803,9 @@ export default function UserManagement() {
               <option value="staff">Staff</option>
               <option value="manager">Manager</option>
               <option value="admin">Admin</option>
+              {customRoles.map((cr) => (
+                <option key={cr.id} value={cr.id}>{cr.name}</option>
+              ))}
             </select>
           </div>
           <div>
@@ -540,6 +857,9 @@ export default function UserManagement() {
                 <option value="admin">Admin</option>
                 <option value="manager">Manager</option>
                 <option value="staff">Staff</option>
+                {customRoles.map((cr) => (
+                  <option key={cr.id} value={cr.id}>{cr.name}</option>
+                ))}
               </select>
               <p className="text-xs text-mid-gray mt-1">
                 Changing the role will reset permissions to defaults. You can then customize.
@@ -553,7 +873,7 @@ export default function UserManagement() {
                   Custom overrides active -- permissions differ from role defaults.
                 </span>
                 <button
-                  onClick={() => setPermChecked(new Set(ROLE_DEFAULTS[permRole] ?? []))}
+                  onClick={() => setPermChecked(new Set(getPermissionsForRole(permRole)))}
                   className="text-xs text-amber-700 underline hover:text-amber-900"
                 >
                   Reset to defaults
@@ -617,6 +937,125 @@ export default function UserManagement() {
           </div>
         )}
       </SlideOver>
+    </div>
+  );
+}
+
+// ── Role Form Card (used for both create & edit) ──
+
+interface RoleFormCardProps {
+  title: string;
+  roleName: string;
+  onRoleNameChange?: (name: string) => void;
+  permissions: Set<Permission>;
+  onTogglePerm?: (perm: Permission) => void;
+  onToggleGroup?: (perms: Permission[], select: boolean) => void;
+  onSave?: () => void;
+  onCancel: () => void;
+  isBuiltIn: boolean;
+}
+
+function RoleFormCard({
+  title,
+  roleName,
+  onRoleNameChange,
+  permissions,
+  onTogglePerm,
+  onToggleGroup,
+  onSave,
+  onCancel,
+  isBuiltIn,
+}: RoleFormCardProps) {
+  return (
+    <div className="card p-6 border-2 border-forest/20">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-lg font-semibold text-charcoal">{title}</h3>
+        <button onClick={onCancel} className="text-sm text-mid-gray hover:text-charcoal">
+          Close
+        </button>
+      </div>
+
+      {/* Role name */}
+      <div className="mb-4">
+        <label className="block text-sm font-medium text-charcoal mb-1">Role Name</label>
+        {onRoleNameChange ? (
+          <input
+            type="text"
+            value={roleName}
+            onChange={(e) => onRoleNameChange(e.target.value)}
+            placeholder="e.g. Team Lead, Coordinator..."
+            className="w-full px-3 py-2 rounded-lg border border-sage-pale text-sm text-charcoal placeholder:text-mid-gray focus:outline-none focus:ring-2 focus:ring-forest/20"
+          />
+        ) : (
+          <p className="px-3 py-2 text-sm text-charcoal bg-sage-pale/30 rounded-lg">{roleName}</p>
+        )}
+      </div>
+
+      {isBuiltIn && (
+        <div className="mb-4 px-3 py-2 rounded-lg bg-blue-50 border border-blue-200">
+          <p className="text-xs text-blue-800">
+            Built-in roles cannot be edited or deleted. These are the default permissions for this role.
+          </p>
+        </div>
+      )}
+
+      {/* Permissions */}
+      <div className="space-y-3 max-h-[500px] overflow-y-auto">
+        <p className="text-sm font-medium text-charcoal">Default Permissions</p>
+        {PERMISSION_GROUPS.map((group) => {
+          const allChecked = group.permissions.every((p) => permissions.has(p));
+          const someChecked = group.permissions.some((p) => permissions.has(p));
+          return (
+            <div key={group.label} className="border border-sage-pale rounded-lg overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-2 bg-sage-pale/30">
+                <label className={`flex items-center gap-2 ${onToggleGroup ? 'cursor-pointer' : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={allChecked}
+                    ref={(el) => {
+                      if (el) el.indeterminate = someChecked && !allChecked;
+                    }}
+                    onChange={() => onToggleGroup?.(group.permissions, !allChecked)}
+                    disabled={!onToggleGroup}
+                    className="rounded border-sage-pale text-forest focus:ring-forest/20 disabled:opacity-50"
+                  />
+                  <span className="text-sm font-semibold text-charcoal">{group.label}</span>
+                </label>
+                <span className="text-xs text-mid-gray">
+                  {group.permissions.filter((p) => permissions.has(p)).length}/{group.permissions.length}
+                </span>
+              </div>
+              <div className="px-4 py-2 grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                {group.permissions.map((perm) => (
+                  <label key={perm} className={`flex items-center gap-2 py-1 rounded px-1 ${onTogglePerm ? 'cursor-pointer hover:bg-sage-pale/20' : ''}`}>
+                    <input
+                      type="checkbox"
+                      checked={permissions.has(perm)}
+                      onChange={() => onTogglePerm?.(perm)}
+                      disabled={!onTogglePerm}
+                      className="rounded border-sage-pale text-forest focus:ring-forest/20 disabled:opacity-50"
+                    />
+                    <span className="text-sm text-charcoal">{ALL_PERMISSIONS[perm]}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Actions */}
+      {onSave && (
+        <div className="flex items-center justify-end gap-2 mt-4 pt-4 border-t border-sage-pale">
+          <button onClick={onCancel} className="btn-ghost text-sm">
+            Cancel
+          </button>
+          <button onClick={onSave} className="btn-primary text-sm">
+            <Check size={14} />
+            {isBuiltIn ? 'Done' : 'Save Role'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

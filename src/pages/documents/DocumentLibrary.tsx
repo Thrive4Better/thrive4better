@@ -18,6 +18,7 @@ import {
   Send,
   Clock,
   Tag,
+  Printer,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
@@ -29,6 +30,14 @@ import {
   type DocumentField,
 } from '@/data/companyDocuments';
 import { cn, formatDate, generateId } from '@/lib/utils';
+import {
+  Document as PdfDocument,
+  Page as PdfPage,
+  Text as PdfText,
+  View as PdfView,
+  StyleSheet as PdfStyleSheet,
+  pdf,
+} from '@react-pdf/renderer';
 
 // ── localStorage helpers ──
 
@@ -71,6 +80,157 @@ const categoryColors: Record<DocumentCategory, string> = {
   'Agreements & Contracts': 'bg-blue-100 text-blue-700',
   'Templates': 'bg-green-100 text-green-700',
 };
+
+// ── Company constants ──
+const COMPANY_NAME = 'Thrive 4 Better Pty Ltd';
+const COMPANY_ABN = 'ABN: 15 694 748 297';
+const COMPANY_DIRECTOR = 'Director: Melissa Manno';
+const COMPANY_ADDRESS = 'Melbourne, Victoria';
+const COMPANY_EMAIL = 'info@thrive4better.com';
+const COMPANY_PHONE = '0422 745 229';
+
+// ── PDF Styles ──
+
+const pdfStyles = PdfStyleSheet.create({
+  page: {
+    padding: 50,
+    fontSize: 10,
+    fontFamily: 'Helvetica',
+    color: '#1a1a1a',
+  },
+  headerBar: {
+    backgroundColor: '#2d5016',
+    padding: 16,
+    marginBottom: 20,
+    marginHorizontal: -50,
+    marginTop: -50,
+    paddingHorizontal: 50,
+  },
+  headerCompany: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#ffffff',
+    marginBottom: 2,
+  },
+  headerAbn: {
+    fontSize: 9,
+    color: '#d4e5c7',
+  },
+  headerAddress: {
+    fontSize: 9,
+    color: '#d4e5c7',
+    marginTop: 1,
+  },
+  docTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#2d5016',
+    marginBottom: 6,
+    marginTop: 10,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    gap: 20,
+    marginBottom: 16,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e5e5',
+  },
+  metaText: {
+    fontSize: 9,
+    color: '#666666',
+  },
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#2d5016',
+    marginTop: 14,
+    marginBottom: 6,
+    paddingBottom: 3,
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#2d5016',
+  },
+  sectionContent: {
+    fontSize: 10,
+    lineHeight: 1.6,
+    color: '#333333',
+    marginBottom: 8,
+  },
+  footer: {
+    position: 'absolute',
+    bottom: 30,
+    left: 50,
+    right: 50,
+    borderTopWidth: 1,
+    borderTopColor: '#e5e5e5',
+    paddingTop: 8,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  footerText: {
+    fontSize: 8,
+    color: '#999999',
+  },
+  pageNumber: {
+    fontSize: 8,
+    color: '#999999',
+  },
+});
+
+// ── PDF Document Component ──
+
+function DocumentPdfContent({ doc }: { doc: CompanyDocument }) {
+  // Split sections across pages (roughly 3 sections per page to keep content readable)
+  const SECTIONS_PER_PAGE = 3;
+  const pages: typeof doc.sections[] = [];
+  for (let i = 0; i < doc.sections.length; i += SECTIONS_PER_PAGE) {
+    pages.push(doc.sections.slice(i, i + SECTIONS_PER_PAGE));
+  }
+
+  return (
+    <PdfDocument>
+      {pages.map((pageSections, pageIdx) => (
+        <PdfPage key={pageIdx} size="A4" style={pdfStyles.page}>
+          {/* Header bar on first page */}
+          {pageIdx === 0 && (
+            <>
+              <PdfView style={pdfStyles.headerBar}>
+                <PdfText style={pdfStyles.headerCompany}>{COMPANY_NAME}</PdfText>
+                <PdfText style={pdfStyles.headerAbn}>{COMPANY_ABN}</PdfText>
+                <PdfText style={pdfStyles.headerAddress}>{COMPANY_ADDRESS} | {COMPANY_EMAIL} | {COMPANY_PHONE}</PdfText>
+              </PdfView>
+              <PdfText style={pdfStyles.docTitle}>{doc.title}</PdfText>
+              <PdfView style={pdfStyles.metaRow}>
+                <PdfText style={pdfStyles.metaText}>Version: {doc.version}</PdfText>
+                <PdfText style={pdfStyles.metaText}>Last Updated: {formatDate(doc.lastUpdated)}</PdfText>
+                <PdfText style={pdfStyles.metaText}>Category: {doc.category}</PdfText>
+              </PdfView>
+            </>
+          )}
+
+          {pageSections.map((section, sIdx) => (
+            <PdfView key={sIdx} wrap={false}>
+              <PdfText style={pdfStyles.sectionTitle}>{section.title}</PdfText>
+              <PdfText style={pdfStyles.sectionContent}>{section.content}</PdfText>
+            </PdfView>
+          ))}
+
+          {/* Footer */}
+          <PdfView style={pdfStyles.footer} fixed>
+            <PdfText style={pdfStyles.footerText}>
+              {COMPANY_NAME} | {COMPANY_ABN} | {COMPANY_DIRECTOR}
+            </PdfText>
+            <PdfText
+              style={pdfStyles.pageNumber}
+              render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`}
+            />
+          </PdfView>
+        </PdfPage>
+      ))}
+    </PdfDocument>
+  );
+}
 
 // ── Main Component ──
 
@@ -403,7 +563,7 @@ function DocumentCard({ doc, onView, onDownload, onFill }: DocumentCardProps) {
   );
 }
 
-// ── Document View Modal ──
+// ── Document View Modal (PDF-like preview) ──
 
 interface DocumentViewModalProps {
   doc: CompanyDocument;
@@ -414,60 +574,108 @@ interface DocumentViewModalProps {
 }
 
 function DocumentViewModal({ doc, currentSection, onSectionChange, onClose, onDownload }: DocumentViewModalProps) {
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+
+  const handlePrint = () => {
+    window.print();
+  };
+
+  const handleDownloadPdf = async () => {
+    setDownloadingPdf(true);
+    try {
+      const blob = await pdf(<DocumentPdfContent doc={doc} />).toBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${doc.title.replace(/\s+/g, '_')}_v${doc.version}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success('PDF downloaded');
+    } catch (err) {
+      console.error('PDF generation failed:', err);
+      toast.error('Failed to generate PDF');
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-8 pb-8">
       <div className="fixed inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[calc(100vh-4rem)] flex flex-col mx-4">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-sage-pale flex-shrink-0">
+      <div className="relative bg-gray-100 rounded-2xl shadow-xl w-full max-w-5xl max-h-[calc(100vh-4rem)] flex flex-col mx-4">
+        {/* Header toolbar */}
+        <div className="flex items-center justify-between px-6 py-3 bg-charcoal rounded-t-2xl flex-shrink-0">
           <div className="flex items-center gap-3 min-w-0">
-            <FileText size={20} className="text-forest flex-shrink-0" />
+            <FileText size={18} className="text-white/70 flex-shrink-0" />
             <div className="min-w-0">
-              <h3 className="text-lg font-semibold text-charcoal truncate">{doc.title}</h3>
-              <div className="flex items-center gap-3 text-xs text-mid-gray">
+              <h3 className="text-sm font-semibold text-white truncate">{doc.title}</h3>
+              <div className="flex items-center gap-3 text-xs text-white/50">
                 <span>Version {doc.version}</span>
                 <span>Updated {formatDate(doc.lastUpdated)}</span>
               </div>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={onDownload} className="btn-secondary text-xs py-1.5">
-              <Download size={14} />
-              Download
+            <button
+              onClick={handlePrint}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white/80 hover:text-white hover:bg-white/10 transition-colors"
+              title="Print"
+            >
+              <Printer size={14} />
+              Print
             </button>
-            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-sage-pale transition-colors">
-              <X size={20} className="text-mid-gray" />
+            <button
+              onClick={handleDownloadPdf}
+              disabled={downloadingPdf}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white/80 hover:text-white hover:bg-white/10 transition-colors disabled:opacity-50"
+              title="Download as PDF"
+            >
+              <Download size={14} />
+              {downloadingPdf ? 'Generating...' : 'Download PDF'}
+            </button>
+            <button
+              onClick={onDownload}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white/80 hover:text-white hover:bg-white/10 transition-colors"
+            >
+              <Download size={14} />
+              TXT
+            </button>
+            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/10 transition-colors ml-2">
+              <X size={18} className="text-white/70" />
             </button>
           </div>
         </div>
 
-        {/* Content */}
+        {/* Content area */}
         <div className="flex flex-1 overflow-hidden">
-          {/* Section nav */}
-          <div className="w-64 border-r border-sage-pale overflow-y-auto py-3 px-2 flex-shrink-0 hidden md:block">
+          {/* Section nav sidebar */}
+          <div className="w-56 border-r border-gray-200 overflow-y-auto py-3 px-2 flex-shrink-0 hidden md:block bg-white/80">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-mid-gray px-3 mb-2">Sections</p>
             {doc.sections.map((section, idx) => (
               <button
                 key={idx}
                 onClick={() => onSectionChange(idx)}
                 className={cn(
-                  'w-full text-left px-3 py-2 rounded-lg text-sm mb-0.5 transition-colors flex items-center gap-2',
+                  'w-full text-left px-3 py-2 rounded-lg text-xs mb-0.5 transition-colors flex items-center gap-2',
                   currentSection === idx
-                    ? 'bg-sage-pale text-forest font-medium'
+                    ? 'bg-forest/10 text-forest font-medium'
                     : 'text-mid-gray hover:bg-sage-pale/50 hover:text-charcoal'
                 )}
               >
                 {currentSection === idx ? (
-                  <ChevronDown size={14} className="flex-shrink-0" />
+                  <ChevronDown size={12} className="flex-shrink-0" />
                 ) : (
-                  <ChevronRight size={14} className="flex-shrink-0" />
+                  <ChevronRight size={12} className="flex-shrink-0" />
                 )}
                 <span className="line-clamp-2">{section.title}</span>
               </button>
             ))}
           </div>
 
-          {/* Section content */}
-          <div className="flex-1 overflow-y-auto p-6">
+          {/* PDF-like page view */}
+          <div className="flex-1 overflow-y-auto p-6 bg-gray-200/80 print:bg-white print:p-0">
             {/* Mobile section selector */}
             <div className="md:hidden mb-4">
               <select
@@ -483,32 +691,89 @@ function DocumentViewModal({ doc, currentSection, onSectionChange, onClose, onDo
               </select>
             </div>
 
-            <h4 className="text-lg font-semibold text-charcoal mb-4">
-              {doc.sections[currentSection].title}
-            </h4>
-            <div className="whitespace-pre-wrap text-sm text-charcoal leading-relaxed font-mono bg-sage-pale/30 rounded-xl p-4 border border-sage-pale">
-              {doc.sections[currentSection].content}
-            </div>
+            {/* The "page" */}
+            <div className="max-w-[210mm] mx-auto bg-white shadow-lg rounded-sm print:shadow-none print:rounded-none"
+                 style={{ minHeight: '297mm' }}>
+              {/* Branded header bar */}
+              <div className="bg-forest px-10 py-5 print:px-8">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-lg bg-white/20 flex items-center justify-center">
+                        <span className="text-white font-bold text-lg">T4B</span>
+                      </div>
+                      <div>
+                        <h2 className="text-white font-bold text-lg">{COMPANY_NAME}</h2>
+                        <p className="text-white/70 text-xs">{COMPANY_ABN}</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-white/70 text-xs">{COMPANY_ADDRESS}</p>
+                    <p className="text-white/70 text-xs">{COMPANY_EMAIL}</p>
+                    <p className="text-white/70 text-xs">{COMPANY_PHONE}</p>
+                  </div>
+                </div>
+              </div>
 
-            {/* Section navigation */}
-            <div className="flex items-center justify-between mt-6 pt-4 border-t border-sage-pale">
-              <button
-                onClick={() => onSectionChange(Math.max(0, currentSection - 1))}
-                disabled={currentSection === 0}
-                className="btn-ghost text-sm disabled:opacity-30"
-              >
-                Previous
-              </button>
-              <span className="text-xs text-mid-gray">
-                Section {currentSection + 1} of {doc.sections.length}
-              </span>
-              <button
-                onClick={() => onSectionChange(Math.min(doc.sections.length - 1, currentSection + 1))}
-                disabled={currentSection === doc.sections.length - 1}
-                className="btn-ghost text-sm disabled:opacity-30"
-              >
-                Next
-              </button>
+              {/* Document title & meta */}
+              <div className="px-10 pt-8 pb-4 border-b border-gray-200 print:px-8">
+                <h1 className="text-2xl font-bold text-charcoal mb-2">{doc.title}</h1>
+                <div className="flex items-center gap-4 text-xs text-mid-gray">
+                  <span>Version {doc.version}</span>
+                  <span className="w-1 h-1 rounded-full bg-mid-gray" />
+                  <span>Last Updated: {formatDate(doc.lastUpdated)}</span>
+                  <span className="w-1 h-1 rounded-full bg-mid-gray" />
+                  <span>{doc.category}</span>
+                </div>
+              </div>
+
+              {/* Section content */}
+              <div className="px-10 py-8 print:px-8">
+                <div className="space-y-6">
+                  <div>
+                    <h3 className="text-base font-bold text-forest mb-3 pb-2 border-b-2 border-forest/20">
+                      {doc.sections[currentSection].title}
+                    </h3>
+                    <div className="text-sm text-charcoal leading-relaxed whitespace-pre-wrap">
+                      {doc.sections[currentSection].content.split('\n\n').map((para, i) => (
+                        <p key={i} className="mb-3">{para}</p>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section navigation */}
+                <div className="flex items-center justify-between mt-10 pt-4 border-t border-gray-200">
+                  <button
+                    onClick={() => onSectionChange(Math.max(0, currentSection - 1))}
+                    disabled={currentSection === 0}
+                    className="btn-ghost text-sm disabled:opacity-30"
+                  >
+                    Previous Section
+                  </button>
+                  <span className="text-xs text-mid-gray">
+                    Section {currentSection + 1} of {doc.sections.length}
+                  </span>
+                  <button
+                    onClick={() => onSectionChange(Math.min(doc.sections.length - 1, currentSection + 1))}
+                    disabled={currentSection === doc.sections.length - 1}
+                    className="btn-ghost text-sm disabled:opacity-30"
+                  >
+                    Next Section
+                  </button>
+                </div>
+              </div>
+
+              {/* Page footer */}
+              <div className="mt-auto px-10 py-4 border-t border-gray-200 flex items-center justify-between print:px-8">
+                <p className="text-[10px] text-mid-gray">
+                  {COMPANY_NAME} | {COMPANY_ABN} | {COMPANY_DIRECTOR}
+                </p>
+                <p className="text-[10px] text-mid-gray">
+                  Page {currentSection + 1} of {doc.sections.length}
+                </p>
+              </div>
             </div>
           </div>
         </div>
