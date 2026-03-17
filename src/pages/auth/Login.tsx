@@ -27,7 +27,7 @@ const signUpSchema = z
 type LoginFormData = z.infer<typeof loginSchema>;
 type SignUpFormData = z.infer<typeof signUpSchema>;
 
-const OTP_LENGTH = 6;
+const OTP_LENGTH = 8;
 
 function OtpInput({ onComplete, disabled }: { onComplete: (code: string) => void; disabled: boolean }) {
   const [digits, setDigits] = useState<string[]>(Array(OTP_LENGTH).fill(''));
@@ -93,7 +93,7 @@ function OtpInput({ onComplete, disabled }: { onComplete: (code: string) => void
           onChange={(e) => handleChange(i, e.target.value)}
           onKeyDown={(e) => handleKeyDown(i, e)}
           onPaste={i === 0 ? handlePaste : undefined}
-          className="w-10 h-12 sm:w-12 sm:h-14 text-center text-xl sm:text-2xl font-bold rounded-xl border border-sage-pale bg-sage-pale/20 text-forest focus:outline-none focus:ring-2 focus:ring-forest focus:border-transparent transition disabled:opacity-50"
+          className="w-9 h-11 sm:w-10 sm:h-13 text-center text-lg sm:text-xl font-bold rounded-lg border border-sage-pale bg-sage-pale/20 text-forest focus:outline-none focus:ring-2 focus:ring-forest focus:border-transparent transition disabled:opacity-50"
         />
       ))}
     </div>
@@ -201,7 +201,7 @@ export default function Login() {
               </div>
               <h2 className="text-lg font-bold text-charcoal mb-1">Check your email</h2>
               <p className="text-mid-gray text-sm mb-1">
-                We sent a 6-digit code to
+                We sent an 8-digit code to
               </p>
               <p className="text-forest font-semibold text-sm mb-6">
                 {signUpEmail}
