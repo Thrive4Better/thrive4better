@@ -8,6 +8,10 @@ import toast from 'react-hot-toast';
 import EmptyState from '@/components/ui/EmptyState';
 import { cn, formatCurrency, generateId } from '@/lib/utils';
 import { useStore } from '@/stores/useStore';
+import {
+  loadAccountingCategories,
+  type AccountingCategory,
+} from '@/data/accountingCategories';
 
 // ── Types ──
 
@@ -105,7 +109,7 @@ function getCurrentFYStartYear(): number {
   return now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1;
 }
 
-function getTransactionsFromStorage(): { date: string; debit: number; credit: number; type: string; accountCode: string; description?: string }[] {
+function getTransactionsFromStorage(): { date: string; debit: number; credit: number; type: string; accountCode: string; description?: string; categoryId?: string; taxType?: string }[] {
   try {
     const saved = localStorage.getItem('t4b_transactions');
     return saved ? JSON.parse(saved) : [];
@@ -306,7 +310,10 @@ export default function BASReport() {
       } catch { return false; }
     });
 
-    // Categorize revenue
+    // Categorize revenue using accounting category tax types
+    const acctCategories = loadAccountingCategories();
+    const acctCatMap = new Map(acctCategories.map((c) => [c.id, c]));
+
     let gstApplicableRevenue = 0;
     let gstFreeRevenue = 0;
     let gstCollected = 0;
@@ -315,9 +322,22 @@ export default function BASReport() {
     for (const inv of quarterInvoices) {
       for (const item of inv.lineItems) {
         const cat = item.supportCategory || 'Uncategorised';
-        const isGSTFree = GST_FREE_CATEGORIES.some(
-          (c) => cat.toLowerCase().includes(c.toLowerCase())
-        );
+
+        // Determine GST status: prefer accounting category tax type, fall back to support category heuristic
+        let isGSTFree = false;
+        const acctCat = (item as { accountingCategoryId?: string }).accountingCategoryId
+          ? acctCatMap.get((item as { accountingCategoryId?: string }).accountingCategoryId!)
+          : undefined;
+
+        if (acctCat) {
+          // Use accounting category's tax type for classification
+          isGSTFree = acctCat.taxType === 'GST Free' || acctCat.taxType === 'BAS Excluded';
+        } else {
+          // Fallback: use support category heuristic
+          isGSTFree = GST_FREE_CATEGORIES.some(
+            (c) => cat.toLowerCase().includes(c.toLowerCase())
+          );
+        }
 
         if (!categoryMap[cat]) categoryMap[cat] = { amount: 0, gst: 0, gstFree: isGSTFree };
 
@@ -389,7 +409,7 @@ export default function BASReport() {
       } catch { return false; }
     });
 
-    // Categorize purchases
+    // Categorize purchases using tax types from accounting categories
     let capitalPurchases = 0;
     let nonCapitalPurchases = 0;
     let purchasesWithoutGST = 0;
@@ -400,21 +420,45 @@ export default function BASReport() {
       const code = (t.accountCode || '').toString();
       const desc = (t.description || '').toLowerCase();
 
-      // Capital purchases (asset accounts typically start with 1)
-      if (code.startsWith('1') && (desc.includes('equipment') || desc.includes('vehicle') || desc.includes('furniture') || desc.includes('computer') || desc.includes('asset'))) {
-        capitalPurchases += amount;
-      }
-      // Wages/salary - no GST
-      else if (code.startsWith('6') && (desc.includes('wage') || desc.includes('salary') || desc.includes('super'))) {
-        purchasesWithoutGST += amount;
-      }
-      // Insurance, bank fees - typically no GST or input taxed
-      else if (desc.includes('insurance') || desc.includes('bank fee') || desc.includes('interest')) {
-        inputTaxedPurchases += amount;
-      }
-      // All other expenses - non-capital purchases
-      else {
-        nonCapitalPurchases += amount;
+      // Use tax type from transaction (set via accounting category) if available
+      const txnTaxType = t.taxType || '';
+      const txnCat = t.categoryId ? acctCatMap.get(t.categoryId) : undefined;
+      const effectiveTaxType = txnTaxType || txnCat?.taxType || '';
+
+      if (effectiveTaxType) {
+        // Classify using the accounting category tax type
+        if (effectiveTaxType === 'BAS Excluded') {
+          purchasesWithoutGST += amount;
+        } else if (effectiveTaxType === 'GST Free') {
+          purchasesWithoutGST += amount;
+        } else if (effectiveTaxType === 'GST on Expenses') {
+          // Check if it's a capital purchase
+          if (code.startsWith('1') && (desc.includes('equipment') || desc.includes('vehicle') || desc.includes('furniture') || desc.includes('computer') || desc.includes('asset'))) {
+            capitalPurchases += amount;
+          } else {
+            nonCapitalPurchases += amount;
+          }
+        } else {
+          nonCapitalPurchases += amount;
+        }
+      } else {
+        // Fallback: original heuristic logic
+        // Capital purchases (asset accounts typically start with 1)
+        if (code.startsWith('1') && (desc.includes('equipment') || desc.includes('vehicle') || desc.includes('furniture') || desc.includes('computer') || desc.includes('asset'))) {
+          capitalPurchases += amount;
+        }
+        // Wages/salary - no GST
+        else if (code.startsWith('6') && (desc.includes('wage') || desc.includes('salary') || desc.includes('super'))) {
+          purchasesWithoutGST += amount;
+        }
+        // Insurance, bank fees - typically no GST or input taxed
+        else if (desc.includes('insurance') || desc.includes('bank fee') || desc.includes('interest')) {
+          inputTaxedPurchases += amount;
+        }
+        // All other expenses - non-capital purchases
+        else {
+          nonCapitalPurchases += amount;
+        }
       }
     }
 

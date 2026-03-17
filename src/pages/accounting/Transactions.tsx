@@ -9,6 +9,14 @@ import SlideOver from '@/components/ui/SlideOver';
 import EmptyState from '@/components/ui/EmptyState';
 import { cn, formatCurrency, generateId } from '@/lib/utils';
 import { useStore } from '@/stores/useStore';
+import {
+  loadAccountingCategories,
+  saveAccountingCategories,
+  getCategoriesByGroup,
+  type AccountingCategory,
+  type CategoryGroup,
+  type TaxType,
+} from '@/data/accountingCategories';
 
 // ── Types ──
 
@@ -24,6 +32,8 @@ interface Transaction {
   type: 'income' | 'expense' | 'journal' | 'transfer';
   reconciled: boolean;
   source: 'manual' | 'csv' | 'auto';
+  categoryId?: string;
+  taxType?: string;
   createdAt: string;
 }
 
@@ -45,6 +55,242 @@ function getAccountsFromStorage(): AccountOption[] {
   }
 }
 
+// ── Searchable Category Dropdown ──
+
+function CategoryDropdown({
+  value,
+  onChange,
+  categories,
+  onAddNew,
+}: {
+  value: string;
+  onChange: (categoryId: string, category: AccountingCategory | null) => void;
+  categories: AccountingCategory[];
+  onAddNew: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const ref = useRef<HTMLDivElement>(null);
+
+  const selected = categories.find((c) => c.id === value);
+  const grouped = useMemo(() => getCategoriesByGroup(categories), [categories]);
+
+  const filteredGrouped = useMemo(() => {
+    if (!search) return grouped;
+    const q = search.toLowerCase();
+    const result: Record<CategoryGroup, AccountingCategory[]> = {
+      'Revenue': [],
+      'Cost of Services': [],
+      'Operating Expenses': [],
+      'Other': [],
+    };
+    for (const [group, cats] of Object.entries(grouped)) {
+      const filtered = cats.filter(
+        (c) => c.name.toLowerCase().includes(q) || String(c.code).includes(q)
+      );
+      if (filtered.length > 0) {
+        result[group as CategoryGroup] = filtered;
+      }
+    }
+    return result;
+  }, [grouped, search]);
+
+  const hasResults = Object.values(filteredGrouped).some((arr) => arr.length > 0);
+
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+        setSearch('');
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => { setOpen(!open); setSearch(''); }}
+        className="input-field w-full text-left flex items-center justify-between gap-2"
+      >
+        <span className={selected ? 'text-charcoal' : 'text-mid-gray'}>
+          {selected ? `${selected.code} - ${selected.name}` : 'Select category...'}
+        </span>
+        <svg className="w-4 h-4 text-mid-gray shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="absolute z-30 mt-1 w-full bg-white border border-sage-light rounded-xl shadow-lg max-h-72 flex flex-col">
+          <div className="p-2 border-b border-gray-100">
+            <div className="relative">
+              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-mid-gray" />
+              <input
+                type="text"
+                placeholder="Search categories..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-forest focus:ring-1 focus:ring-forest/20"
+                autoFocus
+              />
+            </div>
+          </div>
+          <div className="overflow-y-auto flex-1">
+            {!hasResults && (
+              <div className="px-4 py-3 text-sm text-mid-gray">No categories match your search</div>
+            )}
+            {(['Revenue', 'Cost of Services', 'Operating Expenses', 'Other'] as CategoryGroup[]).map((group) => {
+              const cats = filteredGrouped[group];
+              if (!cats || cats.length === 0) return null;
+              return (
+                <div key={group}>
+                  <div className="px-3 py-1.5 text-xs font-semibold text-mid-gray uppercase tracking-wide bg-gray-50 sticky top-0">
+                    {group}
+                  </div>
+                  {cats.map((cat) => (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      onClick={() => {
+                        onChange(cat.id, cat);
+                        setOpen(false);
+                        setSearch('');
+                      }}
+                      className={cn(
+                        'w-full text-left px-4 py-2 text-sm hover:bg-sage-pale transition-colors flex items-center justify-between',
+                        cat.id === value && 'bg-sage-pale/50 text-forest font-medium',
+                      )}
+                    >
+                      <span>{cat.name}</span>
+                      <span className="text-xs text-mid-gray ml-2 shrink-0">{cat.code}</span>
+                    </button>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              setSearch('');
+              onAddNew();
+            }}
+            className="w-full text-left px-4 py-2.5 text-sm text-forest font-medium hover:bg-sage-pale transition-colors border-t border-gray-100 flex items-center gap-2"
+          >
+            <Plus size={14} />
+            Add new category
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Add Category Modal ──
+
+function AddCategoryModal({
+  open,
+  onClose,
+  onSave,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSave: (cat: AccountingCategory) => void;
+}) {
+  const [name, setName] = useState('');
+  const [group, setGroup] = useState<CategoryGroup>('Operating Expenses');
+  const [code, setCode] = useState('');
+  const [taxType, setTaxType] = useState<TaxType>('GST on Expenses');
+  const [catType, setCatType] = useState<'revenue' | 'expense'>('expense');
+
+  useEffect(() => {
+    if (open) {
+      setName('');
+      setCode('');
+      setGroup('Operating Expenses');
+      setTaxType('GST on Expenses');
+      setCatType('expense');
+    }
+  }, [open]);
+
+  if (!open) return null;
+
+  const handleSave = () => {
+    if (!name.trim()) { toast.error('Category name is required'); return; }
+    if (!code.trim()) { toast.error('Category code is required'); return; }
+    const newCat: AccountingCategory = {
+      id: `cat-user-${generateId()}`,
+      name: name.trim(),
+      type: catType,
+      group,
+      code: parseInt(code) || 0,
+      taxType,
+      isDefault: false,
+    };
+    onSave(newCat);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="fixed inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-xl p-6 w-full max-w-md mx-4">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-charcoal">Add New Category</h3>
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100">
+            <X size={20} className="text-mid-gray" />
+          </button>
+        </div>
+        <div className="space-y-3">
+          <div>
+            <label className="block text-sm font-medium text-charcoal mb-1">Category Name</label>
+            <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Staff Amenities" className="input-field w-full" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-charcoal mb-1">Code</label>
+              <input type="number" value={code} onChange={(e) => setCode(e.target.value)} placeholder="e.g. 590" className="input-field w-full" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-charcoal mb-1">Type</label>
+              <select value={catType} onChange={(e) => setCatType(e.target.value as 'revenue' | 'expense')} className="input-field w-full">
+                <option value="revenue">Revenue</option>
+                <option value="expense">Expense</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-charcoal mb-1">Group</label>
+            <select value={group} onChange={(e) => setGroup(e.target.value as CategoryGroup)} className="input-field w-full">
+              <option value="Revenue">Revenue</option>
+              <option value="Cost of Services">Cost of Services</option>
+              <option value="Operating Expenses">Operating Expenses</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-charcoal mb-1">Tax Type</label>
+            <select value={taxType} onChange={(e) => setTaxType(e.target.value as TaxType)} className="input-field w-full">
+              <option value="GST Free">GST Free</option>
+              <option value="GST on Income">GST on Income</option>
+              <option value="GST on Expenses">GST on Expenses</option>
+              <option value="BAS Excluded">BAS Excluded</option>
+            </select>
+          </div>
+        </div>
+        <div className="flex gap-3 mt-6">
+          <button onClick={onClose} className="btn-ghost flex-1">Cancel</button>
+          <button onClick={handleSave} className="btn-primary flex-1">Create Category</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Component ──
 
 export default function Transactions() {
@@ -56,6 +302,9 @@ export default function Transactions() {
   });
   useEffect(() => { localStorage.setItem('t4b_transactions', JSON.stringify(transactions)); }, [transactions]);
 
+  const [acctCategories, setAcctCategories] = useState<AccountingCategory[]>(() => loadAccountingCategories());
+  useEffect(() => { saveAccountingCategories(acctCategories); }, [acctCategories]);
+
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'income' | 'expense' | 'journal' | 'transfer'>('all');
   const [filterAccount, setFilterAccount] = useState('all');
@@ -63,12 +312,14 @@ export default function Transactions() {
   const [dateTo, setDateTo] = useState(() => format(endOfMonth(new Date()), 'yyyy-MM-dd'));
   const [slideOpen, setSlideOpen] = useState(false);
   const [csvModalOpen, setCsvModalOpen] = useState(false);
+  const [addCatModalOpen, setAddCatModalOpen] = useState(false);
 
   // Journal entry form
   const [journalDate, setJournalDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [journalDesc, setJournalDesc] = useState('');
   const [journalRef, setJournalRef] = useState('');
   const [journalAccount, setJournalAccount] = useState('');
+  const [journalCategoryId, setJournalCategoryId] = useState('');
   const [journalDebit, setJournalDebit] = useState('');
   const [journalCredit, setJournalCredit] = useState('');
   const [journalType, setJournalType] = useState<'income' | 'expense' | 'journal' | 'transfer'>('journal');
@@ -149,6 +400,7 @@ export default function Transactions() {
     setJournalDesc('');
     setJournalRef('');
     setJournalAccount(accountOptions.length > 0 ? accountOptions[0].code : '');
+    setJournalCategoryId('');
     setJournalDebit('');
     setJournalCredit('');
     setJournalType('journal');
@@ -161,18 +413,21 @@ export default function Transactions() {
     if (journalDebit && journalCredit) { toast.error('Enter either debit or credit, not both'); return; }
 
     const acct = accountOptions.find((a) => a.code === journalAccount);
+    const cat = acctCategories.find((c) => c.id === journalCategoryId);
     const txn: Transaction = {
       id: generateId(),
       date: journalDate,
       description: journalDesc.trim(),
-      accountCode: journalAccount,
-      accountName: acct?.name || journalAccount,
+      accountCode: journalAccount || (cat ? String(cat.code) : ''),
+      accountName: acct?.name || (cat?.name ?? journalAccount),
       reference: journalRef.trim(),
       debit: parseFloat(journalDebit) || 0,
       credit: parseFloat(journalCredit) || 0,
       type: journalType,
       reconciled: false,
       source: 'manual',
+      categoryId: journalCategoryId || undefined,
+      taxType: cat?.taxType || undefined,
       createdAt: new Date().toISOString(),
     };
     setTransactions((prev) => [...prev, txn]);
@@ -184,6 +439,12 @@ export default function Transactions() {
     setTransactions((prev) =>
       prev.map((t) => (t.id === id ? { ...t, reconciled: !t.reconciled } : t))
     );
+  };
+
+  const handleAddCategory = (cat: AccountingCategory) => {
+    setAcctCategories((prev) => [...prev, cat]);
+    setJournalCategoryId(cat.id);
+    toast.success(`Category "${cat.name}" created`);
   };
 
   // CSV handling
@@ -265,11 +526,16 @@ export default function Transactions() {
   };
 
   const exportCsv = () => {
-    const headers = ['Date', 'Description', 'Account', 'Reference', 'Debit', 'Credit', 'Balance', 'Reconciled'];
-    const rows = transactionsWithBalance.map((t) => [
-      t.date, t.description, `${t.accountCode} - ${t.accountName}`, t.reference,
-      t.debit.toFixed(2), t.credit.toFixed(2), t.runningBalance.toFixed(2), t.reconciled ? 'Yes' : 'No',
-    ]);
+    const headers = ['Date', 'Description', 'Account', 'Category', 'Tax Type', 'Reference', 'Debit', 'Credit', 'Balance', 'Reconciled'];
+    const rows = transactionsWithBalance.map((t) => {
+      const cat = t.categoryId ? acctCategories.find((c) => c.id === t.categoryId) : null;
+      return [
+        t.date, t.description, `${t.accountCode} - ${t.accountName}`,
+        cat ? cat.name : '', t.taxType || '',
+        t.reference,
+        t.debit.toFixed(2), t.credit.toFixed(2), t.runningBalance.toFixed(2), t.reconciled ? 'Yes' : 'No',
+      ];
+    });
     const csvContent = [headers.join(','), ...rows.map((r) => r.map((v) => `"${v}"`).join(','))].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
@@ -421,7 +687,7 @@ export default function Transactions() {
                   <th className="text-left text-xs font-semibold text-mid-gray uppercase tracking-wide px-4 py-3 w-8"></th>
                   <th className="text-left text-xs font-semibold text-mid-gray uppercase tracking-wide px-4 py-3">Date</th>
                   <th className="text-left text-xs font-semibold text-mid-gray uppercase tracking-wide px-4 py-3">Description</th>
-                  <th className="text-left text-xs font-semibold text-mid-gray uppercase tracking-wide px-4 py-3">Account</th>
+                  <th className="text-left text-xs font-semibold text-mid-gray uppercase tracking-wide px-4 py-3">Category</th>
                   <th className="text-left text-xs font-semibold text-mid-gray uppercase tracking-wide px-4 py-3">Reference</th>
                   <th className="text-right text-xs font-semibold text-mid-gray uppercase tracking-wide px-4 py-3">Debit</th>
                   <th className="text-right text-xs font-semibold text-mid-gray uppercase tracking-wide px-4 py-3">Credit</th>
@@ -429,48 +695,60 @@ export default function Transactions() {
                 </tr>
               </thead>
               <tbody>
-                {transactionsWithBalance.map((t) => (
-                  <tr key={t.id} className="border-b border-gray-100 hover:bg-cream/30 transition-colors">
-                    <td className="px-4 py-3">
-                      <button
-                        onClick={() => toggleReconciled(t.id)}
-                        className="text-mid-gray hover:text-forest transition-colors"
-                        title={t.reconciled ? 'Mark as unreconciled' : 'Mark as reconciled'}
-                      >
-                        {t.reconciled
-                          ? <CheckCircle2 size={16} className="text-green-600" />
-                          : <Circle size={16} />
-                        }
-                      </button>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-charcoal whitespace-nowrap">
-                      {format(parseISO(t.date), 'dd MMM yyyy')}
-                    </td>
-                    <td className="px-4 py-3">
-                      <p className="text-sm font-medium text-charcoal">{t.description}</p>
-                      <span className={cn(
-                        'text-xs px-1.5 py-0.5 rounded font-medium',
-                        t.type === 'income' ? 'bg-green-100 text-green-700' :
-                        t.type === 'expense' ? 'bg-red-100 text-red-700' :
-                        t.type === 'transfer' ? 'bg-blue-100 text-blue-700' :
-                        'bg-gray-100 text-gray-600'
-                      )}>
-                        {t.type}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-mid-gray">{t.accountCode} - {t.accountName}</td>
-                    <td className="px-4 py-3 text-sm text-mid-gray">{t.reference}</td>
-                    <td className="px-4 py-3 text-sm text-right font-medium">
-                      {t.debit > 0 ? <span className="text-green-700">{formatCurrency(t.debit)}</span> : <span className="text-mid-gray">-</span>}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-right font-medium">
-                      {t.credit > 0 ? <span className="text-red-600">{formatCurrency(t.credit)}</span> : <span className="text-mid-gray">-</span>}
-                    </td>
-                    <td className={cn('px-4 py-3 text-sm text-right font-bold', t.runningBalance >= 0 ? 'text-charcoal' : 'text-red-600')}>
-                      {formatCurrency(t.runningBalance)}
-                    </td>
-                  </tr>
-                ))}
+                {transactionsWithBalance.map((t) => {
+                  const cat = t.categoryId ? acctCategories.find((c) => c.id === t.categoryId) : null;
+                  return (
+                    <tr key={t.id} className="border-b border-gray-100 hover:bg-cream/30 transition-colors">
+                      <td className="px-4 py-3">
+                        <button
+                          onClick={() => toggleReconciled(t.id)}
+                          className="text-mid-gray hover:text-forest transition-colors"
+                          title={t.reconciled ? 'Mark as unreconciled' : 'Mark as reconciled'}
+                        >
+                          {t.reconciled
+                            ? <CheckCircle2 size={16} className="text-green-600" />
+                            : <Circle size={16} />
+                          }
+                        </button>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-charcoal whitespace-nowrap">
+                        {format(parseISO(t.date), 'dd MMM yyyy')}
+                      </td>
+                      <td className="px-4 py-3">
+                        <p className="text-sm font-medium text-charcoal">{t.description}</p>
+                        <span className={cn(
+                          'text-xs px-1.5 py-0.5 rounded font-medium',
+                          t.type === 'income' ? 'bg-green-100 text-green-700' :
+                          t.type === 'expense' ? 'bg-red-100 text-red-700' :
+                          t.type === 'transfer' ? 'bg-blue-100 text-blue-700' :
+                          'bg-gray-100 text-gray-600'
+                        )}>
+                          {t.type}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        {cat ? (
+                          <div>
+                            <p className="text-sm text-charcoal">{cat.name}</p>
+                            <p className="text-xs text-mid-gray">{cat.taxType}</p>
+                          </div>
+                        ) : (
+                          <span className="text-sm text-mid-gray">{t.accountCode} - {t.accountName}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-mid-gray">{t.reference}</td>
+                      <td className="px-4 py-3 text-sm text-right font-medium">
+                        {t.debit > 0 ? <span className="text-green-700">{formatCurrency(t.debit)}</span> : <span className="text-mid-gray">-</span>}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-right font-medium">
+                        {t.credit > 0 ? <span className="text-red-600">{formatCurrency(t.credit)}</span> : <span className="text-mid-gray">-</span>}
+                      </td>
+                      <td className={cn('px-4 py-3 text-sm text-right font-bold', t.runningBalance >= 0 ? 'text-charcoal' : 'text-red-600')}>
+                        {formatCurrency(t.runningBalance)}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
               <tfoot>
                 <tr className="bg-gray-50 border-t-2 border-gray-300">
@@ -504,9 +782,24 @@ export default function Transactions() {
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-charcoal mb-1">Account</label>
+            <label className="block text-sm font-medium text-charcoal mb-1">Category</label>
+            <CategoryDropdown
+              value={journalCategoryId}
+              onChange={(catId, cat) => {
+                setJournalCategoryId(catId);
+                // Auto-set account code from category
+                if (cat) {
+                  setJournalAccount(String(cat.code));
+                }
+              }}
+              categories={acctCategories}
+              onAddNew={() => setAddCatModalOpen(true)}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-charcoal mb-1">Account (optional override)</label>
             <select value={journalAccount} onChange={(e) => setJournalAccount(e.target.value)} className="input-field w-full">
-              {accountOptions.length === 0 && <option value="">No accounts - set up Chart of Accounts first</option>}
+              <option value="">-- Use category code --</option>
               {accountOptions.map((a) => (
                 <option key={a.code} value={a.code}>{a.code} - {a.name}</option>
               ))}
@@ -536,6 +829,13 @@ export default function Transactions() {
           </div>
         </div>
       </SlideOver>
+
+      {/* Add Category Modal */}
+      <AddCategoryModal
+        open={addCatModalOpen}
+        onClose={() => setAddCatModalOpen(false)}
+        onSave={handleAddCategory}
+      />
 
       {/* CSV Import Modal */}
       {csvModalOpen && (

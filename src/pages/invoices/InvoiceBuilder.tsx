@@ -21,6 +21,13 @@ import toast from 'react-hot-toast';
 import { pdf } from '@react-pdf/renderer';
 import InvoicePdf from './InvoicePdf';
 import { NDIS_SUPPORT_CATEGORIES, PAYMENT_TERMS } from '@/lib/categories';
+import {
+  loadAccountingCategories,
+  getCategoriesByGroup,
+  getDefaultRevenueCategory,
+  type AccountingCategory,
+  type CategoryGroup,
+} from '@/data/accountingCategories';
 
 // ── Import from Roster Modal ──
 interface RosterModalProps {
@@ -220,6 +227,13 @@ export default function InvoiceBuilder() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
 
+  // Accounting categories for revenue classification
+  const acctCategories = useMemo(() => loadAccountingCategories(), []);
+  const revenueCategories = useMemo(
+    () => acctCategories.filter((c) => c.type === 'revenue'),
+    [acctCategories]
+  );
+
   const activeClients = useMemo(
     () => clients.filter((c) => c.status === 'Active'),
     [clients]
@@ -256,6 +270,7 @@ export default function InvoiceBuilder() {
         hours: 0,
         rate: 0,
         amount: 0,
+        accountingCategoryId: '',
       },
     ]);
   };
@@ -296,17 +311,21 @@ export default function InvoiceBuilder() {
 
   const handleImportShifts = useCallback(
     (selectedShifts: Shift[]) => {
-      const newItems: InvoiceLineItem[] = selectedShifts.map((s) => ({
-        id: generateId(),
-        date: s.date,
-        description: `${s.serviceType}${s.notes ? ' - ' + s.notes : ''}`,
-        ndisLineItemCode: s.ndisLineItemCode,
-        supportCategory: s.supportCategory,
-        hours: s.hours,
-        rate: s.hourlyRate,
-        amount: s.totalAmount,
-        shiftId: s.id,
-      }));
+      const newItems: InvoiceLineItem[] = selectedShifts.map((s) => {
+        const defaultCat = getDefaultRevenueCategory(s.supportCategory || s.serviceType);
+        return {
+          id: generateId(),
+          date: s.date,
+          description: `${s.serviceType}${s.notes ? ' - ' + s.notes : ''}`,
+          ndisLineItemCode: s.ndisLineItemCode,
+          supportCategory: s.supportCategory,
+          hours: s.hours,
+          rate: s.hourlyRate,
+          amount: s.totalAmount,
+          shiftId: s.id,
+          accountingCategoryId: defaultCat?.id || '',
+        };
+      });
       setLineItems((prev) => [...prev, ...newItems]);
       toast.success(`Imported ${selectedShifts.length} shift(s)`);
     },
@@ -626,13 +645,14 @@ export default function InvoiceBuilder() {
               </div>
             ) : (
               <div className="overflow-x-auto -mx-6">
-                <table className="w-full min-w-[800px]">
+                <table className="w-full min-w-[900px]">
                   <thead className="border-b border-sage-pale">
                     <tr>
                       <th className="table-header">Date</th>
                       <th className="table-header">Description</th>
                       <th className="table-header">NDIS Code</th>
-                      <th className="table-header">Category</th>
+                      <th className="table-header">Support Category</th>
+                      <th className="table-header">Account</th>
                       <th className="table-header w-20">Hours</th>
                       <th className="table-header w-24">Rate ($)</th>
                       <th className="table-header w-24">Amount ($)</th>
@@ -671,12 +691,31 @@ export default function InvoiceBuilder() {
                         <td className="px-4 py-2">
                           <select
                             value={item.supportCategory}
-                            onChange={(e) => updateLineItem(item.id, 'supportCategory', e.target.value)}
+                            onChange={(e) => {
+                              updateLineItem(item.id, 'supportCategory', e.target.value);
+                              // Auto-set accounting category based on support category
+                              const defaultCat = getDefaultRevenueCategory(e.target.value);
+                              if (defaultCat && !item.accountingCategoryId) {
+                                updateLineItem(item.id, 'accountingCategoryId', defaultCat.id);
+                              }
+                            }}
                             className="input-field text-xs"
                           >
                             <option value="">Select category</option>
                             {NDIS_SUPPORT_CATEGORIES.map((cat) => (
                               <option key={cat} value={cat}>{cat}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="px-4 py-2">
+                          <select
+                            value={item.accountingCategoryId || ''}
+                            onChange={(e) => updateLineItem(item.id, 'accountingCategoryId', e.target.value)}
+                            className="input-field text-xs"
+                          >
+                            <option value="">Select account</option>
+                            {revenueCategories.map((cat) => (
+                              <option key={cat.id} value={cat.id}>{cat.code} - {cat.name}</option>
                             ))}
                           </select>
                         </td>

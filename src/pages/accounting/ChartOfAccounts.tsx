@@ -7,6 +7,14 @@ import toast from 'react-hot-toast';
 import SlideOver from '@/components/ui/SlideOver';
 import EmptyState from '@/components/ui/EmptyState';
 import { cn, formatCurrency, generateId } from '@/lib/utils';
+import {
+  loadAccountingCategories,
+  saveAccountingCategories,
+  getCategoriesByGroup,
+  type AccountingCategory,
+  type TaxType,
+  type CategoryGroup,
+} from '@/data/accountingCategories';
 
 // ── Types ──
 
@@ -28,6 +36,8 @@ interface Account {
   description: string;
   balance: number;
   isArchived: boolean;
+  taxType?: string;
+  categoryId?: string;
   createdAt: string;
 }
 
@@ -49,6 +59,13 @@ const TYPE_COLORS: Record<AccountType, string> = {
   Expense: 'bg-amber-100 text-amber-800',
 };
 
+const TAX_TYPE_COLORS: Record<string, string> = {
+  'GST Free': 'bg-blue-50 text-blue-700',
+  'GST on Income': 'bg-green-50 text-green-700',
+  'GST on Expenses': 'bg-amber-50 text-amber-700',
+  'BAS Excluded': 'bg-gray-100 text-gray-600',
+};
+
 const CODE_PREFIXES: Record<AccountType, string> = {
   Asset: '1',
   Liability: '2',
@@ -57,73 +74,126 @@ const CODE_PREFIXES: Record<AccountType, string> = {
   Expense: '5',
 };
 
+// ── Map category type to AccountType ──
+function catTypeToAccountType(catType: string): AccountType {
+  switch (catType) {
+    case 'revenue': return 'Revenue';
+    case 'expense': return 'Expense';
+    case 'asset': return 'Asset';
+    case 'liability': return 'Liability';
+    case 'equity': return 'Equity';
+    default: return 'Expense';
+  }
+}
+
+function catGroupToSubType(group: string, catType: string): AccountSubType {
+  if (catType === 'revenue') {
+    return group === 'Revenue' ? 'NDIS Income' : 'Other Income';
+  }
+  if (catType === 'liability') return 'Current Liability';
+  if (catType === 'asset') return 'Current Asset';
+  if (catType === 'equity') return 'Owner Equity';
+  switch (group) {
+    case 'Cost of Services': return 'Wages';
+    case 'Operating Expenses': return 'Other Expense';
+    default: return 'Other Expense';
+  }
+}
+
 // ── Default NDIS Provider Chart of Accounts ──
 
 const defaultAccounts: Account[] = [
   // Assets
-  { id: generateId(), code: '1-1000', name: 'Business Bank Account', type: 'Asset', subType: 'Current Asset', description: 'Main operating bank account', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
-  { id: generateId(), code: '1-1010', name: 'Petty Cash', type: 'Asset', subType: 'Current Asset', description: 'Cash on hand for small expenses', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
-  { id: generateId(), code: '1-1100', name: 'Accounts Receivable', type: 'Asset', subType: 'Current Asset', description: 'Amounts owed by NDIS / plan managers', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
-  { id: generateId(), code: '1-1200', name: 'Prepaid Expenses', type: 'Asset', subType: 'Current Asset', description: 'Expenses paid in advance (insurance, rent)', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
-  { id: generateId(), code: '1-1300', name: 'GST Receivable', type: 'Asset', subType: 'Current Asset', description: 'GST paid on purchases', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
-  { id: generateId(), code: '1-2000', name: 'Office Equipment', type: 'Asset', subType: 'Fixed Asset', description: 'Computers, furniture, phones', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
-  { id: generateId(), code: '1-2010', name: 'Motor Vehicles', type: 'Asset', subType: 'Fixed Asset', description: 'Company vehicles for client transport', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
-  { id: generateId(), code: '1-2020', name: 'Accumulated Depreciation', type: 'Asset', subType: 'Fixed Asset', description: 'Accumulated depreciation on fixed assets', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
+  { id: generateId(), code: '1-1000', name: 'Business Bank Account', type: 'Asset', subType: 'Current Asset', description: 'Main operating bank account', balance: 0, isArchived: false, taxType: 'BAS Excluded', createdAt: new Date().toISOString() },
+  { id: generateId(), code: '1-1010', name: 'Petty Cash', type: 'Asset', subType: 'Current Asset', description: 'Cash on hand for small expenses', balance: 0, isArchived: false, taxType: 'BAS Excluded', createdAt: new Date().toISOString() },
+  { id: generateId(), code: '1-1100', name: 'Accounts Receivable', type: 'Asset', subType: 'Current Asset', description: 'Amounts owed by NDIS / plan managers', balance: 0, isArchived: false, taxType: 'BAS Excluded', createdAt: new Date().toISOString() },
+  { id: generateId(), code: '1-1200', name: 'Prepaid Expenses', type: 'Asset', subType: 'Current Asset', description: 'Expenses paid in advance (insurance, rent)', balance: 0, isArchived: false, taxType: 'BAS Excluded', createdAt: new Date().toISOString() },
+  { id: generateId(), code: '1-1300', name: 'GST Receivable', type: 'Asset', subType: 'Current Asset', description: 'GST paid on purchases', balance: 0, isArchived: false, taxType: 'BAS Excluded', createdAt: new Date().toISOString() },
+  { id: generateId(), code: '1-2000', name: 'Office Equipment', type: 'Asset', subType: 'Fixed Asset', description: 'Computers, furniture, phones', balance: 0, isArchived: false, taxType: 'GST on Expenses', createdAt: new Date().toISOString() },
+  { id: generateId(), code: '1-2010', name: 'Motor Vehicles', type: 'Asset', subType: 'Fixed Asset', description: 'Company vehicles for client transport', balance: 0, isArchived: false, taxType: 'GST on Expenses', createdAt: new Date().toISOString() },
+  { id: generateId(), code: '1-2020', name: 'Accumulated Depreciation', type: 'Asset', subType: 'Fixed Asset', description: 'Accumulated depreciation on fixed assets', balance: 0, isArchived: false, taxType: 'BAS Excluded', createdAt: new Date().toISOString() },
 
   // Liabilities
-  { id: generateId(), code: '2-1000', name: 'Accounts Payable', type: 'Liability', subType: 'Current Liability', description: 'Amounts owed to suppliers', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
-  { id: generateId(), code: '2-1010', name: 'GST Payable', type: 'Liability', subType: 'Current Liability', description: 'GST collected on invoices', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
-  { id: generateId(), code: '2-1020', name: 'PAYG Withholding Payable', type: 'Liability', subType: 'Current Liability', description: 'Employee tax withheld, payable to ATO', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
-  { id: generateId(), code: '2-1030', name: 'Superannuation Payable', type: 'Liability', subType: 'Current Liability', description: 'Employee super contributions payable', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
-  { id: generateId(), code: '2-1040', name: 'Wages Payable', type: 'Liability', subType: 'Current Liability', description: 'Accrued wages not yet paid', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
-  { id: generateId(), code: '2-1050', name: 'Credit Card', type: 'Liability', subType: 'Current Liability', description: 'Business credit card balance', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
-  { id: generateId(), code: '2-2000', name: 'Business Loan', type: 'Liability', subType: 'Long-term Liability', description: 'Long-term business financing', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
-  { id: generateId(), code: '2-2010', name: 'Vehicle Loan', type: 'Liability', subType: 'Long-term Liability', description: 'Loan for company vehicles', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
+  { id: generateId(), code: '2-1000', name: 'Accounts Payable', type: 'Liability', subType: 'Current Liability', description: 'Amounts owed to suppliers', balance: 0, isArchived: false, taxType: 'BAS Excluded', createdAt: new Date().toISOString() },
+  { id: generateId(), code: '2-1010', name: 'GST Payable', type: 'Liability', subType: 'Current Liability', description: 'GST collected on invoices', balance: 0, isArchived: false, taxType: 'BAS Excluded', createdAt: new Date().toISOString() },
+  { id: generateId(), code: '2-1020', name: 'PAYG Withholding Payable', type: 'Liability', subType: 'Current Liability', description: 'Employee tax withheld, payable to ATO', balance: 0, isArchived: false, taxType: 'BAS Excluded', createdAt: new Date().toISOString() },
+  { id: generateId(), code: '2-1030', name: 'Superannuation Payable', type: 'Liability', subType: 'Current Liability', description: 'Employee super contributions payable', balance: 0, isArchived: false, taxType: 'BAS Excluded', createdAt: new Date().toISOString() },
+  { id: generateId(), code: '2-1040', name: 'Wages Payable', type: 'Liability', subType: 'Current Liability', description: 'Accrued wages not yet paid', balance: 0, isArchived: false, taxType: 'BAS Excluded', createdAt: new Date().toISOString() },
+  { id: generateId(), code: '2-1050', name: 'Credit Card', type: 'Liability', subType: 'Current Liability', description: 'Business credit card balance', balance: 0, isArchived: false, taxType: 'BAS Excluded', createdAt: new Date().toISOString() },
+  { id: generateId(), code: '2-2000', name: 'Business Loan', type: 'Liability', subType: 'Long-term Liability', description: 'Long-term business financing', balance: 0, isArchived: false, taxType: 'BAS Excluded', createdAt: new Date().toISOString() },
+  { id: generateId(), code: '2-2010', name: 'Vehicle Loan', type: 'Liability', subType: 'Long-term Liability', description: 'Loan for company vehicles', balance: 0, isArchived: false, taxType: 'BAS Excluded', createdAt: new Date().toISOString() },
 
   // Equity
-  { id: generateId(), code: '3-1000', name: "Owner's Equity", type: 'Equity', subType: 'Owner Equity', description: 'Owner capital contributions', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
-  { id: generateId(), code: '3-1010', name: "Owner's Drawings", type: 'Equity', subType: 'Owner Equity', description: 'Owner withdrawals', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
-  { id: generateId(), code: '3-2000', name: 'Retained Earnings', type: 'Equity', subType: 'Owner Equity', description: 'Accumulated profits from prior years', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
-
-  // Revenue
-  { id: generateId(), code: '4-1000', name: 'NDIS Core Support Income', type: 'Revenue', subType: 'NDIS Income', description: 'Revenue from NDIS Core Support services', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
-  { id: generateId(), code: '4-1010', name: 'NDIS Capacity Building Income', type: 'Revenue', subType: 'NDIS Income', description: 'Revenue from Capacity Building services', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
-  { id: generateId(), code: '4-1020', name: 'NDIS Capital Support Income', type: 'Revenue', subType: 'NDIS Income', description: 'Revenue from Capital Support items', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
-  { id: generateId(), code: '4-1030', name: 'SIL Income', type: 'Revenue', subType: 'NDIS Income', description: 'Revenue from Supported Independent Living', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
-  { id: generateId(), code: '4-1040', name: 'Community Access Income', type: 'Revenue', subType: 'NDIS Income', description: 'Revenue from Community Access services', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
-  { id: generateId(), code: '4-1050', name: 'Transport Income', type: 'Revenue', subType: 'NDIS Income', description: 'Revenue from participant transport', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
-  { id: generateId(), code: '4-2000', name: 'Interest Income', type: 'Revenue', subType: 'Other Income', description: 'Bank interest earned', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
-  { id: generateId(), code: '4-2010', name: 'Other Income', type: 'Revenue', subType: 'Other Income', description: 'Miscellaneous income', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
-
-  // Expenses
-  { id: generateId(), code: '5-1000', name: 'Support Worker Wages', type: 'Expense', subType: 'Wages', description: 'Wages paid to support workers', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
-  { id: generateId(), code: '5-1010', name: 'Superannuation Expense', type: 'Expense', subType: 'Wages', description: 'Employer super contributions (11.5%)', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
-  { id: generateId(), code: '5-1020', name: 'Workers Compensation', type: 'Expense', subType: 'Insurance', description: 'Workers compensation insurance premiums', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
-  { id: generateId(), code: '5-1030', name: 'Staff Training', type: 'Expense', subType: 'Training', description: 'Staff training, first aid, manual handling etc.', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
-  { id: generateId(), code: '5-2000', name: 'Office Rent', type: 'Expense', subType: 'Rent', description: 'Office space lease payments', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
-  { id: generateId(), code: '5-2010', name: 'Public Liability Insurance', type: 'Expense', subType: 'Insurance', description: 'Public liability insurance premiums', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
-  { id: generateId(), code: '5-2020', name: 'Professional Indemnity Insurance', type: 'Expense', subType: 'Insurance', description: 'PI insurance premiums', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
-  { id: generateId(), code: '5-3000', name: 'Vehicle Running Costs', type: 'Expense', subType: 'Vehicle', description: 'Fuel, maintenance, registration, insurance', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
-  { id: generateId(), code: '5-3010', name: 'Vehicle Lease Payments', type: 'Expense', subType: 'Vehicle', description: 'Vehicle leasing costs', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
-  { id: generateId(), code: '5-4000', name: 'Office Supplies', type: 'Expense', subType: 'Office', description: 'Stationery, printing, general supplies', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
-  { id: generateId(), code: '5-4010', name: 'Software Subscriptions', type: 'Expense', subType: 'Office', description: 'NDIS software, CRM, rostering tools', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
-  { id: generateId(), code: '5-4020', name: 'Telephone & Internet', type: 'Expense', subType: 'Utilities', description: 'Phone and internet services', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
-  { id: generateId(), code: '5-5000', name: 'Accounting & Bookkeeping Fees', type: 'Expense', subType: 'Professional Fees', description: 'Accountant and bookkeeper fees', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
-  { id: generateId(), code: '5-5010', name: 'Legal Fees', type: 'Expense', subType: 'Professional Fees', description: 'Legal advisory and compliance costs', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
-  { id: generateId(), code: '5-5020', name: 'NDIS Audit Fees', type: 'Expense', subType: 'Professional Fees', description: 'NDIS quality audit and compliance costs', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
-  { id: generateId(), code: '5-6000', name: 'Depreciation Expense', type: 'Expense', subType: 'Depreciation', description: 'Depreciation on fixed assets', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
-  { id: generateId(), code: '5-7000', name: 'Bank Fees & Charges', type: 'Expense', subType: 'Other Expense', description: 'Bank fees and merchant charges', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
-  { id: generateId(), code: '5-7010', name: 'Advertising & Marketing', type: 'Expense', subType: 'Other Expense', description: 'Marketing and advertising costs', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
-  { id: generateId(), code: '5-7020', name: 'Sundry Expenses', type: 'Expense', subType: 'Other Expense', description: 'Miscellaneous expenses', balance: 0, isArchived: false, createdAt: new Date().toISOString() },
+  { id: generateId(), code: '3-1000', name: "Owner's Equity", type: 'Equity', subType: 'Owner Equity', description: 'Owner capital contributions', balance: 0, isArchived: false, taxType: 'BAS Excluded', createdAt: new Date().toISOString() },
+  { id: generateId(), code: '3-1010', name: "Owner's Drawings", type: 'Equity', subType: 'Owner Equity', description: 'Owner withdrawals', balance: 0, isArchived: false, taxType: 'BAS Excluded', createdAt: new Date().toISOString() },
+  { id: generateId(), code: '3-2000', name: 'Retained Earnings', type: 'Equity', subType: 'Owner Equity', description: 'Accumulated profits from prior years', balance: 0, isArchived: false, taxType: 'BAS Excluded', createdAt: new Date().toISOString() },
 ];
+
+// ── Merge defaults with accounting categories ──
+
+function buildInitialAccounts(): Account[] {
+  const saved = localStorage.getItem('t4b_chart_of_accounts');
+  if (saved) {
+    const existing: Account[] = JSON.parse(saved);
+    // Merge accounting categories that don't already exist
+    const categories = loadAccountingCategories();
+    const existingCodes = new Set(existing.map((a) => a.code));
+    const existingCatIds = new Set(existing.filter((a) => a.categoryId).map((a) => a.categoryId));
+
+    for (const cat of categories) {
+      const catCode = `${catTypeToAccountType(cat.type) === 'Revenue' ? '4' : catTypeToAccountType(cat.type) === 'Expense' ? '5' : catTypeToAccountType(cat.type) === 'Asset' ? '1' : catTypeToAccountType(cat.type) === 'Liability' ? '2' : '3'}-${cat.code}`;
+      if (!existingCodes.has(catCode) && !existingCatIds.has(cat.id)) {
+        existing.push({
+          id: generateId(),
+          code: catCode,
+          name: cat.name,
+          type: catTypeToAccountType(cat.type),
+          subType: catGroupToSubType(cat.group, cat.type),
+          description: `${cat.group} - ${cat.taxType}`,
+          balance: 0,
+          isArchived: false,
+          taxType: cat.taxType,
+          categoryId: cat.id,
+          createdAt: new Date().toISOString(),
+        });
+      }
+    }
+    return existing;
+  }
+
+  // First load: start with defaults + accounting categories
+  const accounts = [...defaultAccounts];
+  const categories = loadAccountingCategories();
+  const existingCodes = new Set(accounts.map((a) => a.code));
+
+  for (const cat of categories) {
+    const prefix = catTypeToAccountType(cat.type) === 'Revenue' ? '4' : catTypeToAccountType(cat.type) === 'Expense' ? '5' : catTypeToAccountType(cat.type) === 'Asset' ? '1' : catTypeToAccountType(cat.type) === 'Liability' ? '2' : '3';
+    const catCode = `${prefix}-${cat.code}`;
+    if (!existingCodes.has(catCode)) {
+      accounts.push({
+        id: generateId(),
+        code: catCode,
+        name: cat.name,
+        type: catTypeToAccountType(cat.type),
+        subType: catGroupToSubType(cat.group, cat.type),
+        description: `${cat.group} - ${cat.taxType}`,
+        balance: 0,
+        isArchived: false,
+        taxType: cat.taxType,
+        categoryId: cat.id,
+        createdAt: new Date().toISOString(),
+      });
+      existingCodes.add(catCode);
+    }
+  }
+
+  return accounts;
+}
 
 // ── Component ──
 
 export default function ChartOfAccounts() {
-  const [accounts, setAccounts] = useState<Account[]>(() => {
-    const saved = localStorage.getItem('t4b_chart_of_accounts');
-    return saved ? JSON.parse(saved) : defaultAccounts;
-  });
+  const [accounts, setAccounts] = useState<Account[]>(() => buildInitialAccounts());
   useEffect(() => { localStorage.setItem('t4b_chart_of_accounts', JSON.stringify(accounts)); }, [accounts]);
 
   const [search, setSearch] = useState('');
@@ -140,6 +210,7 @@ export default function ChartOfAccounts() {
   const [formSubType, setFormSubType] = useState<AccountSubType>('Current Asset');
   const [formDescription, setFormDescription] = useState('');
   const [formBalance, setFormBalance] = useState('0');
+  const [formTaxType, setFormTaxType] = useState<string>('BAS Excluded');
 
   const filteredAccounts = useMemo(() => {
     return accounts.filter((a) => {
@@ -147,7 +218,7 @@ export default function ChartOfAccounts() {
       if (filterType !== 'All' && a.type !== filterType) return false;
       if (search) {
         const q = search.toLowerCase();
-        return a.name.toLowerCase().includes(q) || a.code.toLowerCase().includes(q) || a.description.toLowerCase().includes(q);
+        return a.name.toLowerCase().includes(q) || a.code.toLowerCase().includes(q) || a.description.toLowerCase().includes(q) || (a.taxType || '').toLowerCase().includes(q);
       }
       return true;
     });
@@ -183,6 +254,7 @@ export default function ChartOfAccounts() {
     setFormSubType('Current Asset');
     setFormDescription('');
     setFormBalance('0');
+    setFormTaxType('BAS Excluded');
     setSlideOpen(true);
   };
 
@@ -194,6 +266,7 @@ export default function ChartOfAccounts() {
     setFormSubType(account.subType);
     setFormDescription(account.description);
     setFormBalance(String(account.balance));
+    setFormTaxType(account.taxType || 'BAS Excluded');
     setSlideOpen(true);
   };
 
@@ -213,7 +286,7 @@ export default function ChartOfAccounts() {
       setAccounts((prev) =>
         prev.map((a) =>
           a.id === editingAccount.id
-            ? { ...a, code: formCode.trim(), name: formName.trim(), type: formType, subType: formSubType, description: formDescription.trim(), balance: parseFloat(formBalance) || 0 }
+            ? { ...a, code: formCode.trim(), name: formName.trim(), type: formType, subType: formSubType, description: formDescription.trim(), balance: parseFloat(formBalance) || 0, taxType: formTaxType }
             : a
         )
       );
@@ -228,6 +301,7 @@ export default function ChartOfAccounts() {
         description: formDescription.trim(),
         balance: parseFloat(formBalance) || 0,
         isArchived: false,
+        taxType: formTaxType,
         createdAt: new Date().toISOString(),
       };
       setAccounts((prev) => [...prev, newAccount]);
@@ -297,7 +371,7 @@ export default function ChartOfAccounts() {
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-mid-gray" />
             <input
               type="text"
-              placeholder="Search accounts by name, code, or description..."
+              placeholder="Search accounts by name, code, description, or tax type..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="input-field pl-9 w-full"
@@ -343,10 +417,11 @@ export default function ChartOfAccounts() {
         ) : (
           <div>
             {/* Table header */}
-            <div className="grid grid-cols-[100px_1fr_160px_160px_120px_80px] gap-4 px-6 py-3 bg-gray-50 border-b border-gray-200 text-xs font-semibold text-mid-gray uppercase tracking-wide">
+            <div className="grid grid-cols-[100px_1fr_140px_140px_120px_120px_80px] gap-4 px-6 py-3 bg-gray-50 border-b border-gray-200 text-xs font-semibold text-mid-gray uppercase tracking-wide">
               <span>Code</span>
               <span>Account Name</span>
               <span>Type</span>
+              <span>Tax Type</span>
               <span>Sub-Type</span>
               <span className="text-right">Balance</span>
               <span className="text-right">Actions</span>
@@ -379,7 +454,7 @@ export default function ChartOfAccounts() {
                         <div
                           key={account.id}
                           className={cn(
-                            'grid grid-cols-[100px_1fr_160px_160px_120px_80px] gap-4 px-6 py-3 border-b border-gray-100 hover:bg-cream/30 transition-colors items-center',
+                            'grid grid-cols-[100px_1fr_140px_140px_120px_120px_80px] gap-4 px-6 py-3 border-b border-gray-100 hover:bg-cream/30 transition-colors items-center',
                             account.isArchived && 'opacity-50'
                           )}
                         >
@@ -391,6 +466,9 @@ export default function ChartOfAccounts() {
                             )}
                           </div>
                           <span className={cn('text-xs px-2 py-0.5 rounded-full font-medium w-fit', TYPE_COLORS[account.type])}>{account.type}</span>
+                          <span className={cn('text-xs px-2 py-0.5 rounded-full font-medium w-fit', TAX_TYPE_COLORS[account.taxType || ''] || 'bg-gray-100 text-gray-600')}>
+                            {account.taxType || '-'}
+                          </span>
                           <span className="text-xs text-mid-gray">{account.subType}</span>
                           <span className={cn('text-sm font-medium text-right', account.balance >= 0 ? 'text-charcoal' : 'text-red-600')}>
                             {formatCurrency(account.balance)}
@@ -454,6 +532,20 @@ export default function ChartOfAccounts() {
               {SUB_TYPES[formType].map((st) => (
                 <option key={st} value={st}>{st}</option>
               ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-charcoal mb-1">Tax Type</label>
+            <select
+              value={formTaxType}
+              onChange={(e) => setFormTaxType(e.target.value)}
+              className="input-field w-full"
+            >
+              <option value="GST Free">GST Free</option>
+              <option value="GST on Income">GST on Income</option>
+              <option value="GST on Expenses">GST on Expenses</option>
+              <option value="BAS Excluded">BAS Excluded</option>
             </select>
           </div>
 

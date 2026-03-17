@@ -127,6 +127,7 @@ export interface InvoiceLineItem {
   rate: number;
   amount: number;
   shiftId?: string;
+  accountingCategoryId?: string;
 }
 
 export interface NdisRate {
