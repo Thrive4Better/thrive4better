@@ -777,6 +777,24 @@ export async function fetchAllData(): Promise<{
 }> {
   console.log('[Store] Fetching all data...');
 
+  // Quick connectivity test — try a lightweight query first
+  try {
+    const start = performance.now();
+    const { error: pingError } = await withTimeout(
+      supabase.from('profiles').select('id', { count: 'exact', head: true }),
+      5000,
+      'connectivity-test',
+    );
+    const elapsed = Math.round(performance.now() - start);
+    if (pingError) {
+      console.error(`[Store] Connectivity test FAILED (${elapsed}ms):`, pingError.message);
+    } else {
+      console.log(`[Store] Connectivity test OK (${elapsed}ms)`);
+    }
+  } catch (err) {
+    console.error('[Store] Connectivity test TIMEOUT:', err instanceof Error ? err.message : err);
+  }
+
   // Fetch each independently so one failure doesn't block everything
   // Each query has a 10s timeout to prevent infinite hangs
   const safelyFetch = async <T>(name: string, fn: () => Promise<T[]>): Promise<T[]> => {

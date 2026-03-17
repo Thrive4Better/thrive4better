@@ -92,6 +92,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let mounted = true;
     log('Initializing auth...');
 
+    // Hard safety cutoff — if auth is STILL loading after 12s, force it through
+    const safetyTimer = setTimeout(() => {
+      if (mounted) {
+        logError('SAFETY CUTOFF: Auth loading exceeded 12s, forcing through');
+        setLoading(false);
+      }
+    }, 12000);
+
     supabase.auth
       .getSession()
       .then(async ({ data: { session: s }, error }) => {
@@ -105,7 +113,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(s);
         setUser(s?.user ?? null);
         await loadProfile(s?.user ?? null);
-        if (mounted) setLoading(false);
+        if (mounted) {
+          log('Auth initialization complete');
+          setLoading(false);
+        }
       })
       .catch((err) => {
         logError('getSession crashed:', err);
@@ -125,6 +136,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => {
       mounted = false;
+      clearTimeout(safetyTimer);
       subscription.unsubscribe();
     };
   }, []);
