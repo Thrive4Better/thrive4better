@@ -14,7 +14,7 @@ const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
 const twilioMessagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID;
 const twilioPhoneNumber = process.env.TWILIO_PHONE_NUMBER;
 const resendApiKey = process.env.RESEND_API_KEY;
-const fromEmail = process.env.RESEND_FROM_EMAIL || 'reminders@info.thrive4better.com';
+const fromEmail = process.env.RESEND_FROM_EMAIL || 'reminders@admin.thrive4better.com';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',

@@ -19,7 +19,7 @@ import {
 const supabaseUrl = process.env.VITE_SUPABASE_URL!;
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const resendApiKey = process.env.RESEND_API_KEY!;
-const fromEmail = process.env.RESEND_FROM_EMAIL || 'notifications@info.thrive4better.com';
+const fromEmail = process.env.RESEND_FROM_EMAIL || 'notifications@admin.thrive4better.com';
 
 // Twilio config
 const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID;
